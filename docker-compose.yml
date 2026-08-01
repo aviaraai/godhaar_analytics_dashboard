@@ -1,0 +1,23 @@
+name: godhaar-analytics-dashboard
+
+services:
+  godhaar-analytics-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: prod
+
+    image: godhaar-analytics-dashboard
+    container_name: godhaar-analytics-dashboard
+
+    expose:
+      - 80
+
+    networks:
+      - godhaar-net.dev
+
+    restart: unless-stopped
+
+networks:
+  godhaar-net.dev:
+    external: true
