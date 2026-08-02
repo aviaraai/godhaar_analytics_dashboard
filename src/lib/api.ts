@@ -98,7 +98,7 @@ async function request(path: string): Promise<unknown> {
 /* -------------------------------------------------------------------------- */
 
 const analyticsSchemaRow = z.object({
-  user_id: z.string(),
+  user_email: z.string(),
   total_farmers: z.number(),
   total_animals: z.number(),
   total_assigned: z.number(),

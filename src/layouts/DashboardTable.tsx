@@ -75,8 +75,8 @@ function DashboardTable({ data, filters }: DashboardTableProps) {
           </TableRow>
         ) : (
           data.map((row) => (
-            <TableRow key={row.user_id}>
-              <TableCell className="font-medium">{row.user_id}</TableCell>
+            <TableRow key={row.user_email}>
+              <TableCell className="font-medium">{row.user_email}</TableCell>
               <TableCell className="text-right">{formatCount(row.total_farmers)}</TableCell>
               <TableCell className="text-right">{formatCount(row.total_animals)}</TableCell>
               <TableCell className="text-right">{formatCount(row.total_assigned)}</TableCell>
