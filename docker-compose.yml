@@ -6,6 +6,9 @@ services:
       context: .
       dockerfile: Dockerfile
       target: prod
+      args:
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
 
     image: godhaar-analytics-dashboard
     container_name: godhaar-analytics-dashboard

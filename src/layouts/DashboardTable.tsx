@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/table";
 import type { AnalyticsResult } from "@/lib/api";
 import { describeFilters } from "@/lib/filters";
+import { formatCount } from "@/lib/format";
 import type { FilterFormValues } from "@/lib/types";
 
 type DashboardTableProps = {
@@ -18,14 +19,6 @@ type DashboardTableProps = {
   /** The filters that produced `data` — not necessarily what the form holds. */
   filters: FilterFormValues | null;
 };
-
-/**
- * Digit grouping only — React renders a bare number fine. Totals across a whole
- * state reach five and six figures, which are hard to compare at a glance in a
- * dense right-aligned column. Uses the browser locale, so an en-IN admin gets
- * the lakh grouping they expect: "1,24,318".
- */
-const formatCount = (value: number) => value.toLocaleString();
 
 function DashboardTable({ data, filters }: DashboardTableProps) {
   if (!data || !filters) {
@@ -94,7 +87,10 @@ function DashboardTable({ data, filters }: DashboardTableProps) {
       </TableBody>
       <TableFooter>
         <TableRow>
-          <TableCell>Totals</TableCell>
+          {/* "Filtered" earns its place: the strip above the filters shows
+              whole-dataset counts, and these two rows will disagree whenever a
+              filter is set. Naming both of them "Totals" invites the question. */}
+          <TableCell>Filtered totals</TableCell>
           <TableCell className="text-right">{formatCount(totals.farmers)}</TableCell>
           <TableCell className="text-right">{formatCount(totals.animals)}</TableCell>
           <TableCell className="text-right">{formatCount(totals.assigned)}</TableCell>

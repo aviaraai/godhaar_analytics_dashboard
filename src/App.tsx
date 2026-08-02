@@ -1,108 +1,65 @@
-import { hashKey, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import DashboardTable from "./layouts/DashboardTable";
-import ErrorAlert from "./layouts/ErrorAlert";
-import FilterOptions from "./layouts/FilterOptions";
-import Footer from "./layouts/Footer";
+import { ShieldXIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { signOut, useSession } from "@/lib/session";
+import Dashboard from "./layouts/Dashboard";
 import Header from "./layouts/Header";
 import LoadingSpinner from "./layouts/LoadingSpinner";
-import { getAnalytics, type AnalyticsResult } from "./lib/api";
-import { EMPTY_FILTERS, toSearchFilters } from "./lib/filters";
-import type { FilterFormValues } from "./lib/types";
+import LoginScreen from "./layouts/LoginScreen";
 
-const ANALYTICS_KEY = "analytics";
-
-type Snapshot = {
-  rows: AnalyticsResult;
-  filters: FilterFormValues;
-};
-
+/**
+ * The authorization gate. Worth being blunt about what this is and is not: it
+ * decides what to *render*, nothing more. The admin claim it reads comes out of
+ * a token sitting in this browser, and anyone can edit React state from
+ * devtools. Actual enforcement lives in the Echo middleware guarding
+ * `/api/web/v1/*` — this only spares people from staring at a dashboard that
+ * would answer every request with 403.
+ */
 export default function App() {
-  const queryClient = useQueryClient();
-  const [draft, setDraft] = useState<FilterFormValues>(EMPTY_FILTERS);
-  const [applied, setApplied] = useState<FilterFormValues | null>(null);
-  const [dismissedErrorAt, setDismissedErrorAt] = useState(0);
-  const [clearedAt, setClearedAt] = useState(0);
+  const session = useSession();
 
-  const query = useQuery({
-    queryKey: [ANALYTICS_KEY, applied],
-    queryFn: () => getAnalytics(toSearchFilters(applied ?? EMPTY_FILTERS)),
-    enabled: applied !== null,
-  });
-
-  const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
-  if (query.isSuccess && applied && query.data !== snapshot?.rows) {
-    setSnapshot({ rows: query.data, filters: applied });
+  if (session.status === "loading") {
+    return (
+      <Shell>
+        <LoadingSpinner label="Checking your session…" />
+      </Shell>
+    );
   }
 
-  useEffect(() => {
-    if (clearedAt === 0) return;
-    queryClient.removeQueries({ queryKey: [ANALYTICS_KEY] });
-  }, [clearedAt, queryClient]);
-
-  function handleSearch() {
-    if (query.isFetching) return;
-    if (
-      applied &&
-      hashKey([ANALYTICS_KEY, draft]) === hashKey([ANALYTICS_KEY, applied])
-    ) {
-      void query.refetch();
-      return;
-    }
-    setApplied(draft);
+  if (session.status === "signed-out") {
+    return <LoginScreen notice={session.notice} />;
   }
 
-  function handleClearCache() {
-    setDraft(EMPTY_FILTERS);
-    setApplied(null);
-    setSnapshot(null);
-    setDismissedErrorAt(Date.now());
-    setClearedAt(Date.now());
+  // Signing in succeeded and still ends here for every field user, because
+  // authentication was never the gate — authorization is. Saying so plainly
+  // beats a dashboard where every panel fails.
+  if (!session.isAdmin) {
+    return (
+      <Shell>
+        <ShieldXIcon className="size-8 text-muted-foreground" />
+        <h2 className="font-heading text-lg font-semibold">Not authorized</h2>
+        <p className="max-w-sm text-center text-sm text-balance text-muted-foreground">
+          <span className="font-medium">{session.email}</span> signed in
+          successfully, but this dashboard is limited to administrator accounts.
+        </p>
+        <Button type="button" variant="outline" onClick={() => void signOut()}>
+          Sign out
+        </Button>
+      </Shell>
+    );
   }
 
-  const showError = query.isError && query.errorUpdatedAt > dismissedErrorAt;
+  // Keyed on the account so signing in as someone else starts from clean
+  // filters and an empty table rather than inheriting the last admin's view.
+  return <Dashboard key={session.email} email={session.email} />;
+}
 
+function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-svh flex-col bg-background">
       <Header />
-
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
-        <FilterOptions
-          values={draft}
-          onChange={setDraft}
-          onSearch={handleSearch}
-          onClearCache={handleClearCache}
-          busy={query.isFetching}
-        />
-
-        <section className="mt-6 rounded-xl border bg-card">
-          <div className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
-            <h2 className="font-heading text-sm font-medium">Results</h2>
-            {query.isFetching && <LoadingSpinner label="Fetching analytics…" />}
-          </div>
-          <div className="px-4 pb-4">
-            {snapshot === null && query.isFetching ? (
-              <p className="px-2 py-12 text-center text-sm text-muted-foreground">
-                Loading analytics…
-              </p>
-            ) : (
-              <DashboardTable
-                data={snapshot?.rows ?? null}
-                filters={snapshot?.filters ?? null}
-              />
-            )}
-          </div>
-        </section>
+      <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col items-center justify-center gap-4 px-4 py-10">
+        {children}
       </main>
-
-      <Footer />
-
-      {showError && (
-        <ErrorAlert
-          message={query.error?.message ?? "Something went wrong."}
-          onDismiss={() => setDismissedErrorAt(Date.now())}
-        />
-      )}
     </div>
   );
 }
