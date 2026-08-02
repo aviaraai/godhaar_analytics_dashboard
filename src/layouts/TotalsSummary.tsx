@@ -8,6 +8,8 @@ type TotalsSummaryProps = {
   isPending: boolean;
   isError: boolean;
   onRetry: () => void;
+  title?: string;
+  description?: string;
 };
 
 /**
@@ -15,20 +17,24 @@ type TotalsSummaryProps = {
  * "All records" label is not decoration: `DashboardTable` has its own Totals
  * row in the footer and that one *is* filtered. Two different numbers under
  * the same words, with nothing to distinguish them, is a support ticket.
+ *
+ * The legacy tab reuses this with its own wording. Its numbers arrive by a
+ * different route — summed on the client rather than counted by the backend —
+ * but they mean exactly the same thing, so they belong in the same strip.
  */
 export default function TotalsSummary({
   totals,
   isPending,
   isError,
   onRetry,
+  title = "All records",
+  description = "Whole dataset — no filters applied.",
 }: TotalsSummaryProps) {
   return (
     <section className="flex flex-wrap items-center gap-x-10 gap-y-4 rounded-xl border bg-card px-4 py-4">
       <div className="mr-auto flex flex-col gap-0.5">
-        <h2 className="font-heading text-sm font-medium">All records</h2>
-        <p className="text-xs text-muted-foreground">
-          Whole dataset — no filters applied.
-        </p>
+        <h2 className="font-heading text-sm font-medium">{title}</h2>
+        <p className="text-xs text-muted-foreground">{description}</p>
       </div>
 
       {isError ? (

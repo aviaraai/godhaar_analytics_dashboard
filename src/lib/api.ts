@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { accessToken } from "@/lib/session";
-import type { SearchFilters } from "@/lib/types";
+import type { LegacyFilters, SearchFilters } from "@/lib/types";
 
 const API_ROOT = "/api/web/v1";
 
@@ -147,4 +147,48 @@ export type AnalyticsTotals = z.infer<typeof totalsSchema>;
  */
 export async function getTotals(): Promise<AnalyticsTotals> {
   return parse(totalsSchema, await request("/analytics/totals"));
+}
+
+/* -------------------------------------------------------------------------- */
+/* Legacy analytics                                                            */
+/* -------------------------------------------------------------------------- */
+
+const legacyRowSchema = z.object({
+  state: z.string(),
+  district: z.string(),
+  mandal: z.string(),
+  farmer_count: z.number(),
+  animal_count: z.number(),
+});
+
+const legacySchema = z.array(legacyRowSchema);
+
+export type LegacyRow = z.infer<typeof legacyRowSchema>;
+export type LegacyResult = z.infer<typeof legacySchema>;
+
+/**
+ * Pre-aggregated counts carried over from the old database, one flat row per
+ * mandal. Deliberately unlike `getAnalytics`: no date range (the source rows
+ * have no timestamps), names instead of ids, and 23 rows in the whole table —
+ * so there is nothing to paginate and the totals are summed on the client.
+ *
+ * Arrives sorted by animals desc, then farmers desc, then mandal asc. The table
+ * renders it in the order given rather than re-sorting.
+ */
+export async function getLegacyAnalytics(
+  filters: LegacyFilters,
+): Promise<LegacyResult> {
+  const searchParams = new URLSearchParams();
+  for (const key of ["state", "district", "mandal"] as const) {
+    const value = filters[key];
+    if (value) {
+      searchParams.set(key, value);
+    }
+  }
+  const query = searchParams.toString();
+
+  return parse(
+    legacySchema,
+    await request(`/analytics/legacy${query ? `?${query}` : ""}`),
+  );
 }
