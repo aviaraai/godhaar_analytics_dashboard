@@ -1,4 +1,3 @@
-import { Link } from "react-router";
 import { Badge } from "@/components/ui/badge";
 import type { DebugRegistration } from "@/lib/api";
 import { readDetail } from "@/lib/debug";
@@ -11,6 +10,7 @@ import DebugImages from "./DebugImages";
 type DebugRegistrationCardProps = {
   row: DebugRegistration;
   onRefresh: () => void;
+  onNavigateToAnimal: (animal: string) => void;
 };
 
 /**
@@ -21,9 +21,11 @@ type DebugRegistrationCardProps = {
 export default function DebugRegistrationCard({
   row,
   onRefresh,
+  onNavigateToAnimal,
 }: DebugRegistrationCardProps) {
   const detail = readDetail(row.detail);
   const failures = detail.inference?.failures ?? [];
+  const collidedWith = detail.matched_godhaar_id;
 
   return (
     <article className="flex flex-col gap-4 rounded-xl border bg-card p-4">
@@ -39,17 +41,18 @@ export default function DebugRegistrationCard({
         </span>
       </header>
 
-      {detail.matched_godhaar_id && (
+      {collidedWith && (
         // Resolved at capture time from whichever animals were nearby then, so
         // it cannot be recovered later. Linked while it still exists.
         <p className="flex flex-wrap items-center gap-2 text-sm">
           <span className="text-muted-foreground">Collided with</span>
-          <Link
-            to={`/debug/searches?decision=all&verified=all&animal=${encodeURIComponent(detail.matched_godhaar_id)}`}
+          <button
+            type="button"
+            onClick={() => onNavigateToAnimal(collidedWith)}
             className="font-mono font-medium underline-offset-4 hover:underline"
           >
-            {detail.matched_godhaar_id}
-          </Link>
+            {collidedWith}
+          </button>
         </p>
       )}
 

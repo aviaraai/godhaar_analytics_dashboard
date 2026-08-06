@@ -1,18 +1,11 @@
-# Client-side routing means the server is asked for paths that do not exist as
-# files — /debug/searches is a React route, not a directory. Without the
-# fallback, Caddy's default file_server answers a reload or a shared link with
-# 404 and the app never gets a chance to handle it.
 :80 {
 	root * /usr/share/caddy
 
 	encode gzip zstd
 
-	# Hashed asset filenames make the bundle safe to cache forever; index.html
-	# must not be, or a deploy leaves browsers pointing at assets that are gone.
 	@assets path /assets/*
 	header @assets Cache-Control "public, max-age=31536000, immutable"
 	header /index.html Cache-Control "no-cache"
 
-	try_files {path} /index.html
 	file_server
 }

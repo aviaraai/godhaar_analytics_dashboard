@@ -120,6 +120,10 @@ async function request(
           : { "Content-Type": "application/json" }),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
+      // Unset for ordinary calls, where the browser's own limits are the right
+      // ones. `AbortSignal.timeout` throws the `DOMException` named
+      // "TimeoutError" the catch below is written to recognise.
+      signal: timeoutMs === undefined ? undefined : AbortSignal.timeout(timeoutMs),
     });
   } catch (error) {
     // Our own ceiling rather than the network's, so it deserves its own words:

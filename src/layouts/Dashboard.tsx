@@ -6,10 +6,12 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs";
 import AnalyticsPanel from "./AnalyticsPanel";
+import CctvPanel from "./CctvPanel";
 import LegacyPanel from "./LegacyPanel";
 
 const CURRENT = "current";
 const LEGACY = "legacy";
+const CCTV = "cctv";
 
 export default function Dashboard() {
   const [tab, setTab] = useState<string>(CURRENT);
@@ -24,11 +26,16 @@ export default function Dashboard() {
   // screen whose value is in the state they hold, and an address per view would
   // trade that away for a link nobody has asked for.
   //
-  // Legacy is mounted only after its tab is first opened, though: mounting it up
-  // front would fire its totals query for every admin who never looks at it.
+  // Legacy and CCTV are mounted only after their tab is first opened, though:
+  // mounting either up front would fire a query — Legacy's totals, CCTV's
+  // goshala list and history — for every admin who never looks at that tab.
   const [legacyOpened, setLegacyOpened] = useState(false);
   if (tab === LEGACY && !legacyOpened) {
     setLegacyOpened(true);
+  }
+  const [cctvOpened, setCctvOpened] = useState(false);
+  if (tab === CCTV && !cctvOpened) {
+    setCctvOpened(true);
   }
 
   return (
@@ -36,6 +43,7 @@ export default function Dashboard() {
       <TabsList>
         <TabsTrigger value={CURRENT}>Current data</TabsTrigger>
         <TabsTrigger value={LEGACY}>Legacy data</TabsTrigger>
+        <TabsTrigger value={CCTV}>CCTV analysis</TabsTrigger>
       </TabsList>
 
       <TabsContent
@@ -52,6 +60,14 @@ export default function Dashboard() {
         className="flex flex-col gap-6 pt-2"
       >
         {legacyOpened && <LegacyPanel />}
+      </TabsContent>
+
+      <TabsContent
+        value={CCTV}
+        keepMounted
+        className="flex flex-col gap-6 pt-2"
+      >
+        {cctvOpened && <CctvPanel />}
       </TabsContent>
     </Tabs>
   );

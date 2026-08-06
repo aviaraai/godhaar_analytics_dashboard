@@ -1,5 +1,4 @@
 import { CheckIcon, TrashIcon, UndoIcon, XIcon } from "lucide-react";
-import { Link } from "react-router";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { DebugSearch, Decision, VerifiedState } from "@/lib/api";
@@ -21,6 +20,8 @@ type DebugSearchCardProps = {
   onRefresh: () => void;
   /** Verified in this sitting, so it is kept on screen for second thoughts. */
   justReviewed: boolean;
+  /** Switches to the Searches filters for another animal named on this card. */
+  onNavigateToAnimal: (animal: string) => void;
 };
 
 const DECISION_VARIANT: Record<
@@ -44,6 +45,7 @@ export default function DebugSearchCard({
   pending,
   onRefresh,
   justReviewed,
+  onNavigateToAnimal,
 }: DebugSearchCardProps) {
   const detail = readDetail(row.detail);
   const shifted = isAttributeShifted(detail.reason);
@@ -106,11 +108,16 @@ export default function DebugSearchCard({
             {animal ? "Matched animal" : "Top candidate"}
           </h3>
           {animal ? (
-            <MatchedAnimal animal={animal} onRefresh={onRefresh} />
+            <MatchedAnimal
+              animal={animal}
+              onRefresh={onRefresh}
+              onNavigateToAnimal={onNavigateToAnimal}
+            />
           ) : (
             <CandidateNote
               decision={row.decision}
               candidate={detail.top_candidate}
+              onNavigateToAnimal={onNavigateToAnimal}
             />
           )}
         </section>
@@ -160,9 +167,11 @@ function VerifiedBadge({ verified }: { verified: VerifiedState }) {
 function MatchedAnimal({
   animal,
   onRefresh,
+  onNavigateToAnimal,
 }: {
   animal: NonNullable<DebugSearch["matched_animal"]>;
   onRefresh: () => void;
+  onNavigateToAnimal: (animal: string) => void;
 }) {
   const attributes = [
     animal.breed,
@@ -192,7 +201,7 @@ function MatchedAnimal({
         }
       />
       <div className="flex flex-wrap items-center gap-2">
-        <AnimalLink id={animal.godhaar_id} />
+        <AnimalLink id={animal.godhaar_id} onNavigate={onNavigateToAnimal} />
         {animal.deleted && (
           <Badge variant="destructive">
             <TrashIcon /> deleted
@@ -219,9 +228,11 @@ function MatchedAnimal({
 function CandidateNote({
   decision,
   candidate,
+  onNavigateToAnimal,
 }: {
   decision: Decision;
   candidate: string | undefined;
+  onNavigateToAnimal: (animal: string) => void;
 }) {
   if (decision === "FAILED") {
     return (
@@ -234,7 +245,7 @@ function CandidateNote({
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-dashed px-3 py-4">
       {candidate ? (
-        <AnimalLink id={candidate} />
+        <AnimalLink id={candidate} onNavigate={onNavigateToAnimal} />
       ) : (
         <p className="text-xs text-muted-foreground">No candidate recorded.</p>
       )}
@@ -248,17 +259,25 @@ function CandidateNote({
 
 /**
  * Every other record touching this animal. There is no animal record screen in
- * this dashboard to point at, so the link goes to the thing that does exist and
- * is useful while reviewing: the animal's own debug history.
+ * this dashboard to point at, so this switches to the thing that does exist
+ * and is useful while reviewing: the animal's own debug history, filtered down
+ * to it on the Searches tab.
  */
-function AnimalLink({ id }: { id: string }) {
+function AnimalLink({
+  id,
+  onNavigate,
+}: {
+  id: string;
+  onNavigate: (id: string) => void;
+}) {
   return (
-    <Link
-      to={`/debug/searches?decision=all&verified=all&animal=${encodeURIComponent(id)}`}
+    <button
+      type="button"
+      onClick={() => onNavigate(id)}
       className="font-mono text-sm font-medium underline-offset-4 hover:underline"
     >
       {id}
-    </Link>
+    </button>
   );
 }
 

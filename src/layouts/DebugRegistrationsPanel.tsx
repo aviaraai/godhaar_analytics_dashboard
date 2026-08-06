@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { RotateCwIcon } from "lucide-react";
-import { useSearchParams } from "react-router";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { getDebugRegistrations } from "@/lib/api";
 import {
@@ -8,8 +8,7 @@ import {
   countBy,
   deviceModel,
   matchesRegistrationFilters,
-  paramsForRegistrationFilters,
-  registrationFiltersFromParams,
+  type RegistrationViewFilters,
 } from "@/lib/debug";
 import { formatCount } from "@/lib/format";
 import DebugBreakdown from "./DebugBreakdown";
@@ -19,15 +18,22 @@ import LoadingSpinner from "./LoadingSpinner";
 
 const REGISTRATIONS_KEY = "debug-registrations";
 
+type DebugRegistrationsPanelProps = {
+  onNavigateToAnimal: (animal: string) => void;
+};
+
 /**
  * Registrations the model refused, and the two breakdowns that answer why:
  * a spike in one `error_code`, or in one device model, is the signal. Both
  * breakdowns double as the filter, so following a spike to the records behind
  * it is a single click.
  */
-export default function DebugRegistrationsPanel() {
-  const [params, setParams] = useSearchParams();
-  const filters = registrationFiltersFromParams(params);
+export default function DebugRegistrationsPanel({
+  onNavigateToAnimal,
+}: DebugRegistrationsPanelProps) {
+  const [filters, setFilters] = useState<RegistrationViewFilters>(
+    ALL_REGISTRATIONS,
+  );
 
   const query = useQuery({
     queryKey: [REGISTRATIONS_KEY],
@@ -65,13 +71,7 @@ export default function DebugRegistrationsPanel() {
           buckets={byCode}
           active={filters.errorCode}
           onSelect={(errorCode) =>
-            setParams(
-              paramsForRegistrationFilters({
-                ...filters,
-                errorCode: errorCode ?? undefined,
-              }),
-              { replace: true },
-            )
+            setFilters({ ...filters, errorCode: errorCode ?? undefined })
           }
           missingLabel="no code"
         />
@@ -80,12 +80,7 @@ export default function DebugRegistrationsPanel() {
           description="Whether one handset is failing more than the rest."
           buckets={byModel}
           active={filters.deviceModel}
-          onSelect={(model) =>
-            setParams(
-              paramsForRegistrationFilters({ ...filters, deviceModel: model }),
-              { replace: true },
-            )
-          }
+          onSelect={(model) => setFilters({ ...filters, deviceModel: model })}
           missingLabel="not reported"
         />
       </div>
@@ -106,11 +101,7 @@ export default function DebugRegistrationsPanel() {
               type="button"
               variant="ghost"
               size="sm"
-              onClick={() =>
-                setParams(paramsForRegistrationFilters(ALL_REGISTRATIONS), {
-                  replace: true,
-                })
-              }
+              onClick={() => setFilters(ALL_REGISTRATIONS)}
             >
               Clear filters
             </Button>
@@ -145,6 +136,7 @@ export default function DebugRegistrationsPanel() {
               <DebugRegistrationCard
                 row={row}
                 onRefresh={() => void query.refetch()}
+                onNavigateToAnimal={onNavigateToAnimal}
               />
             </li>
           ))}

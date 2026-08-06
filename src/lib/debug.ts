@@ -1,7 +1,5 @@
 import { z } from "zod";
 import {
-  DECISIONS,
-  VERIFIED_STATES,
   type DebugDevice,
   type DebugSearch,
   type Decision,
@@ -204,44 +202,6 @@ export function matchesSearchFilters(
   return true;
 }
 
-/**
- * Filters live in the query string, which is what makes "every other record
- * touching this animal" expressible as an ordinary link — and what lets a
- * reviewer send someone else exactly the view they are looking at.
- *
- * An address with no parameters at all means the default backlog view. Once
- * any parameter is present the URL is taken as a complete statement of intent,
- * so an absent one reads as "all" rather than falling back to the default.
- */
-function oneOf<T extends string>(
-  raw: string | null,
-  allowed: readonly T[],
-): T | "all" {
-  return allowed.includes(raw as T) ? (raw as T) : "all";
-}
-
-export function filtersFromParams(params: URLSearchParams): SearchViewFilters {
-  if ([...params.keys()].length === 0) return DEFAULT_SEARCH_FILTERS;
-  return {
-    decision: oneOf(params.get("decision"), DECISIONS),
-    verified: oneOf(params.get("verified"), VERIFIED_STATES),
-    attributeShifted: params.get("shifted") === "1",
-    animal: params.get("animal") ?? "",
-  };
-}
-
-export function paramsForFilters(
-  filters: SearchViewFilters,
-): Record<string, string> {
-  const params: Record<string, string> = {
-    decision: filters.decision,
-    verified: filters.verified,
-  };
-  if (filters.attributeShifted) params.shifted = "1";
-  if (filters.animal) params.animal = filters.animal;
-  return params;
-}
-
 /** Whether two filter sets would show the same rows — used to light presets. */
 export const sameFilters = (a: SearchViewFilters, b: SearchViewFilters) =>
   a.decision === b.decision &&
@@ -271,31 +231,6 @@ export const ALL_REGISTRATIONS: RegistrationViewFilters = {
   errorCode: undefined,
   deviceModel: undefined,
 };
-
-/**
- * "Every device" and "devices that reported no model" are different questions,
- * and the second one is a real finding — so an absent `model` parameter means
- * the first and an empty one means the second.
- */
-export function registrationFiltersFromParams(
-  params: URLSearchParams,
-): RegistrationViewFilters {
-  return {
-    errorCode: params.get("code") ?? undefined,
-    deviceModel: params.has("model") ? params.get("model") || null : undefined,
-  };
-}
-
-export function paramsForRegistrationFilters(
-  filters: RegistrationViewFilters,
-): Record<string, string> {
-  const params: Record<string, string> = {};
-  if (filters.errorCode !== undefined) params.code = filters.errorCode;
-  if (filters.deviceModel !== undefined) {
-    params.model = filters.deviceModel ?? "";
-  }
-  return params;
-}
 
 export function matchesRegistrationFilters(
   row: { error_code: string; device: DebugDevice | null },

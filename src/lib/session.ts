@@ -32,13 +32,19 @@ export type SessionState =
 export type SignedIn = Extract<SessionState, { status: "signed-in" }>;
 
 /**
- * Where this account belongs when it has not asked for anywhere in particular.
+ * The two screens the app can show a signed-in account — chosen by internal
+ * state, never by URL. There is no address bar involvement in getting here.
+ */
+export type Section = "dashboard" | "debug";
+
+/**
+ * Where this account lands when it has not asked for anywhere in particular.
  * `null` means nowhere — authentication succeeded and there is still nothing
  * here for them, which is the ordinary outcome for a field user.
  */
-export function homePathFor(session: SignedIn): string | null {
-  if (session.isAdmin) return "/";
-  if (session.isDeveloper) return "/debug";
+export function defaultSectionFor(session: SignedIn): Section | null {
+  if (session.isAdmin) return "dashboard";
+  if (session.isDeveloper) return "debug";
   return null;
 }
 
