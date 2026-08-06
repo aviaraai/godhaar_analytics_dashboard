@@ -19,7 +19,28 @@ const SWEEP_INTERVAL_MS = 60 * 1000;
 export type SessionState =
   | { status: "loading" }
   | { status: "signed-out"; notice?: string }
-  | { status: "signed-in"; email: string; isAdmin: boolean };
+  | {
+      status: "signed-in";
+      email: string;
+      /** The raw claim, kept so unrecognised roles can be named on screen. */
+      roles: string[];
+      isAdmin: boolean;
+      isDeveloper: boolean;
+    };
+
+/** The only state that gets past the gate, and the one the shell is built for. */
+export type SignedIn = Extract<SessionState, { status: "signed-in" }>;
+
+/**
+ * Where this account belongs when it has not asked for anywhere in particular.
+ * `null` means nowhere — authentication succeeded and there is still nothing
+ * here for them, which is the ordinary outcome for a field user.
+ */
+export function homePathFor(session: SignedIn): string | null {
+  if (session.isAdmin) return "/";
+  if (session.isDeveloper) return "/debug";
+  return null;
+}
 
 export type Credentials = {
   email: string;
@@ -27,16 +48,29 @@ export type Credentials = {
 };
 
 /**
- * The admin marker. It lives in `app_metadata`, which only the service-role key
+ * The role marker. It lives in `app_metadata`, which only the service-role key
  * can write — `user_metadata` is writable by whoever holds the session, so
  * putting the role there would let any mobile user promote themselves with one
  * SDK call and no visible symptom.
  *
  * This is a rendering decision only. The same claim is checked again by the Go
- * middleware, which is where it actually counts.
+ * middleware, which is where it actually counts: `admin` for the analytics and
+ * CCTV endpoints, `developer` for `/debug/*`.
+ *
+ * A list, and not a hierarchy — neither role contains the other, so an admin
+ * cannot see the debug screens and a developer cannot see the analytics. Both
+ * questions are asked independently, which is also what makes holding both
+ * roles at once work without any further special-casing.
+ *
+ * A bare string is still accepted on the way in. It costs one line and means a
+ * token issued before the claim became a list does not silently authorize
+ * nobody.
  */
-function isAdmin(session: Session): boolean {
-  return session.user.app_metadata?.role === "admin";
+function rolesOf(session: Session): string[] {
+  const role = session.user.app_metadata?.role;
+  if (typeof role === "string") return [role];
+  if (!Array.isArray(role)) return [];
+  return role.filter((value): value is string => typeof value === "string");
 }
 
 /**
@@ -164,9 +198,13 @@ export function useSession(): SessionState {
   if (session === undefined) return { status: "loading" };
   if (session === null) return { status: "signed-out", notice };
 
+  const roles = rolesOf(session);
+
   return {
     status: "signed-in",
     email: session.user.email ?? "",
-    isAdmin: isAdmin(session),
+    roles,
+    isAdmin: roles.includes("admin"),
+    isDeveloper: roles.includes("developer"),
   };
 }

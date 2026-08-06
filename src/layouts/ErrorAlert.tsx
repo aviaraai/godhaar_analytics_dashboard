@@ -13,13 +13,18 @@ import { TriangleAlertIcon } from "lucide-react";
 type ErrorAlertProps = {
   message: string;
   onDismiss: () => void;
+  title?: string;
 };
 
 /**
  * Controlled rather than `defaultOpen`, so a second failure re-opens the dialog
  * instead of staying shut because the user dismissed the first one.
  */
-export default function ErrorAlert({ message, onDismiss }: ErrorAlertProps) {
+export default function ErrorAlert({
+  message,
+  onDismiss,
+  title = "Could not load analytics",
+}: ErrorAlertProps) {
   return (
     <AlertDialog
       open
@@ -32,7 +37,7 @@ export default function ErrorAlert({ message, onDismiss }: ErrorAlertProps) {
           <AlertDialogMedia>
             <TriangleAlertIcon className="text-destructive" />
           </AlertDialogMedia>
-          <AlertDialogTitle>Could not load analytics</AlertDialogTitle>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{message}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

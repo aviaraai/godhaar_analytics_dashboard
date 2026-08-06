@@ -16,18 +16,17 @@ const LEGACY_KEY = "analytics-legacy";
  * results — over a pre-aggregated snapshot of the old database.
  */
 export default function LegacyPanel() {
-  // `draft` is what the form holds, `applied` is what the last press submitted,
-  // exactly as on the current-data tab. Unlike that tab, `applied` starts as the
-  // empty filter rather than null: the unfiltered rows are fetched anyway for the
-  // totals strip, so opening on an empty table would be hiding data already in
-  // hand behind a button press.
+  // `draft` is what the form holds, `applied` is what the last press submitted.
+  // `applied` starts null so the table stays empty until the admin asks for it —
+  // same as the current-data tab. Only the totals strip loads on its own.
   const [draft, setDraft] = useState<LegacyFilters>(EMPTY_LEGACY_FILTERS);
-  const [applied, setApplied] = useState<LegacyFilters>(EMPTY_LEGACY_FILTERS);
+  const [applied, setApplied] = useState<LegacyFilters | null>(null);
   const [dismissedErrorAt, setDismissedErrorAt] = useState(0);
 
   const query = useQuery({
     queryKey: [LEGACY_KEY, applied],
-    queryFn: () => getLegacyAnalytics(applied),
+    queryFn: () => getLegacyAnalytics(applied ?? EMPTY_LEGACY_FILTERS),
+    enabled: applied !== null,
     // A frozen snapshot of a database nothing writes to any more, so a result
     // that arrived once is good for the rest of the session. There are only ~26
     // reachable filter combinations, so the whole thing ends up cached.
@@ -38,12 +37,14 @@ export default function LegacyPanel() {
     placeholderData: keepPreviousData,
   });
 
-  // Whole-dataset counts, so the strip means the same thing here as it does on
-  // the other tab. No `/analytics/legacy/totals` endpoint behind this: the whole
-  // legacy table is 23 rows, so the unfiltered request already carries every
-  // number needed to sum them. This key is identical to the table's whenever no
-  // filter is applied, which makes it a second observer on one cache entry
-  // rather than a second request.
+  // Whole-dataset counts, loaded on mount — the one thing on this tab that does
+  // not wait for a button. No `/analytics/legacy/totals` endpoint behind it: the
+  // whole legacy table is 23 rows, so the unfiltered request already carries
+  // every number needed to sum them.
+  //
+  // That key is also exactly the table's key for an unfiltered search, so
+  // pressing Load with no filters set resolves straight out of this cache entry
+  // instead of hitting the backend a second time.
   const totals = useQuery({
     queryKey: [LEGACY_KEY, EMPTY_LEGACY_FILTERS],
     queryFn: () => getLegacyAnalytics(EMPTY_LEGACY_FILTERS),
@@ -60,7 +61,10 @@ export default function LegacyPanel() {
 
   function handleSearch() {
     if (query.isFetching) return;
-    if (hashKey([LEGACY_KEY, draft]) === hashKey([LEGACY_KEY, applied])) {
+    if (
+      applied &&
+      hashKey([LEGACY_KEY, draft]) === hashKey([LEGACY_KEY, applied])
+    ) {
       // Unchanged filters would just re-read a cache entry that never expires,
       // so the button would feel dead. Treat the press as an explicit refresh —
       // the only way to re-pull the snapshot without reloading the page.
@@ -71,10 +75,11 @@ export default function LegacyPanel() {
   }
 
   function handleClear() {
-    // Resets and loads in one press. Nothing to evict the way the current-data
-    // tab does: these entries are a few hundred bytes and cannot go stale.
+    // Back to the pristine state, table included. Nothing to evict the way the
+    // current-data tab does: these entries are a few hundred bytes and cannot go
+    // stale. The totals strip is left alone — it never responded to the filters.
     setDraft(EMPTY_LEGACY_FILTERS);
-    setApplied(EMPTY_LEGACY_FILTERS);
+    setApplied(null);
     setDismissedErrorAt(Date.now());
   }
 
@@ -101,7 +106,7 @@ export default function LegacyPanel() {
         onChange={setDraft}
         onSearch={handleSearch}
         onClear={handleClear}
-        canClear={hasLegacyFilters(draft) || hasLegacyFilters(applied)}
+        canClear={hasLegacyFilters(draft) || applied !== null}
         busy={query.isFetching}
       />
 
@@ -113,7 +118,13 @@ export default function LegacyPanel() {
           )}
         </div>
         <div className="px-4 pb-4">
-          <LegacyTable data={query.data ?? null} />
+          {query.data === undefined && query.isFetching ? (
+            <p className="px-2 py-12 text-center text-sm text-muted-foreground">
+              Loading legacy records…
+            </p>
+          ) : (
+            <LegacyTable data={query.data ?? null} />
+          )}
         </div>
       </section>
 

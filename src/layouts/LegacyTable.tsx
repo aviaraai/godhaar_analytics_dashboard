@@ -12,7 +12,7 @@ import type { LegacyResult } from "@/lib/api";
 import { formatCount } from "@/lib/format";
 
 type LegacyTableProps = {
-  /** `null` until the first successful load. */
+  /** `null` until the admin has actually loaded something. */
   data: LegacyResult | null;
 };
 
@@ -39,7 +39,8 @@ export default function LegacyTable({ data }: LegacyTableProps) {
   if (!data) {
     return (
       <p className="px-2 py-12 text-center text-sm text-muted-foreground">
-        Loading legacy records…
+        Pick your filters and choose{" "}
+        <span className="font-medium">Load data</span> to run a query.
       </p>
     );
   }
