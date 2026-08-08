@@ -9,7 +9,6 @@ import {
   XIcon,
 } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,6 +36,7 @@ type DebugSearchCardProps = {
   pending: boolean;
   /** Verified in this sitting, so it is kept on screen for second thoughts. */
   justReviewed: boolean;
+  onNavigateToAnimal: (animal: string) => void;
 };
 
 const DECISION_VARIANT: Record<
@@ -65,6 +65,7 @@ export default function DebugSearchCard({
   onVerify,
   pending,
   justReviewed,
+  onNavigateToAnimal,
 }: DebugSearchCardProps) {
   const [open, setOpen] = useState(false);
 
@@ -95,7 +96,10 @@ export default function DebugSearchCard({
           {row.godhaar_id ? (
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-muted-foreground">Matched</span>
-              <AnimalLink id={row.godhaar_id} />
+              <AnimalLink
+                id={row.godhaar_id}
+                onNavigate={onNavigateToAnimal}
+              />
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">
@@ -133,7 +137,12 @@ export default function DebugSearchCard({
           {open ? <ChevronDownIcon /> : <ChevronRightIcon />}
           {open ? "Hide photos and working" : "Photos and decision working"}
         </Button>
-        {open && <SearchDetailView searchId={row.search_id} />}
+        {open && (
+          <SearchDetailView
+            searchId={row.search_id}
+            onNavigateToAnimal={onNavigateToAnimal}
+          />
+        )}
       </div>
     </article>
   );
@@ -145,7 +154,13 @@ export default function DebugSearchCard({
  * presigned for fifteen minutes, which is what `staleTime` is pinned under —
  * a cached detail must never outlive its own images.
  */
-function SearchDetailView({ searchId }: { searchId: string }) {
+function SearchDetailView({
+  searchId,
+  onNavigateToAnimal,
+}: {
+  searchId: string;
+  onNavigateToAnimal: (animal: string) => void;
+}) {
   const query = useQuery({
     queryKey: ["debug-search", searchId],
     queryFn: () => getDebugSearch(searchId),
@@ -175,6 +190,7 @@ function SearchDetailView({ searchId }: { searchId: string }) {
     <SearchDetailBody
       record={query.data}
       onRefresh={() => void query.refetch()}
+      onNavigateToAnimal={onNavigateToAnimal}
     />
   );
 }
@@ -182,9 +198,11 @@ function SearchDetailView({ searchId }: { searchId: string }) {
 function SearchDetailBody({
   record,
   onRefresh,
+  onNavigateToAnimal,
 }: {
   record: DebugSearchDetail;
   onRefresh: () => void;
+  onNavigateToAnimal: (animal: string) => void;
 }) {
   const detail = readDetail(record.detail);
   const reason = describeReason(detail.reason);
@@ -232,11 +250,16 @@ function SearchDetailBody({
             {animal ? "Matched animal" : "Top candidate"}
           </h3>
           {animal ? (
-            <MatchedAnimal animal={animal} onRefresh={onRefresh} />
+            <MatchedAnimal
+              animal={animal}
+              onRefresh={onRefresh}
+              onNavigateToAnimal={onNavigateToAnimal}
+            />
           ) : (
             <CandidateNote
               decision={record.decision}
               candidate={detail.top_candidate}
+              onNavigateToAnimal={onNavigateToAnimal}
             />
           )}
         </section>
@@ -310,9 +333,11 @@ function VerifiedBadge({ verified }: { verified: VerifiedState }) {
 function MatchedAnimal({
   animal,
   onRefresh,
+  onNavigateToAnimal,
 }: {
   animal: NonNullable<DebugSearchDetail["matched_animal"]>;
   onRefresh: () => void;
+  onNavigateToAnimal: (animal: string) => void;
 }) {
   return (
     <div className="flex flex-col gap-2">
@@ -327,7 +352,7 @@ function MatchedAnimal({
         }
       />
       <div className="flex flex-wrap items-center gap-2">
-        <AnimalLink id={animal.godhaar_id} />
+        <AnimalLink id={animal.godhaar_id} onNavigate={onNavigateToAnimal} />
         {animal.deleted && (
           <Badge variant="destructive">
             <TrashIcon /> deleted
@@ -347,9 +372,11 @@ function MatchedAnimal({
 function CandidateNote({
   decision,
   candidate,
+  onNavigateToAnimal,
 }: {
   decision: Decision;
   candidate: string | undefined;
+  onNavigateToAnimal: (animal: string) => void;
 }) {
   if (decision === "FAILED") {
     return (
@@ -362,7 +389,7 @@ function CandidateNote({
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-dashed px-3 py-4">
       {candidate ? (
-        <AnimalLink id={candidate} />
+        <AnimalLink id={candidate} onNavigate={onNavigateToAnimal} />
       ) : (
         <p className="text-xs text-muted-foreground">No candidate recorded.</p>
       )}
@@ -376,17 +403,25 @@ function CandidateNote({
 
 /**
  * Every other record touching this animal. There is no animal record screen in
- * this dashboard to point at, so the link goes to the thing that does exist and
- * is useful while reviewing: the animal's own debug history.
+ * this dashboard to point at, so this switches to the thing that does exist
+ * and is useful while reviewing: the animal's own debug history, filtered down
+ * to it on the Searches tab.
  */
-function AnimalLink({ id }: { id: string }) {
+function AnimalLink({
+  id,
+  onNavigate,
+}: {
+  id: string;
+  onNavigate: (id: string) => void;
+}) {
   return (
-    <Link
-      to={`/debug/searches?decision=all&verified=all&animal=${encodeURIComponent(id)}`}
+    <button
+      type="button"
+      onClick={() => onNavigate(id)}
       className="font-mono text-sm font-medium underline-offset-4 hover:underline"
     >
       {id}
-    </Link>
+    </button>
   );
 }
 

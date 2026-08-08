@@ -5,7 +5,6 @@ import {
   ImageOffIcon,
 } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,6 +22,7 @@ import LoadingSpinner from "./LoadingSpinner";
 
 type DebugRegistrationCardProps = {
   row: DebugRegistrationCardData;
+  onNavigateToAnimal: (animal: string) => void;
 };
 
 /**
@@ -37,6 +37,7 @@ type DebugRegistrationCardProps = {
  */
 export default function DebugRegistrationCard({
   row,
+  onNavigateToAnimal,
 }: DebugRegistrationCardProps) {
   const [open, setOpen] = useState(false);
 
@@ -74,7 +75,12 @@ export default function DebugRegistrationCard({
           {open ? <ChevronDownIcon /> : <ChevronRightIcon />}
           {open ? "Hide photos and payload" : "Photos and rejection payload"}
         </Button>
-        {open && <RegistrationDetailView registrationId={row.registration_id} />}
+        {open && (
+          <RegistrationDetailView
+            registrationId={row.registration_id}
+            onNavigateToAnimal={onNavigateToAnimal}
+          />
+        )}
       </div>
     </article>
   );
@@ -82,8 +88,10 @@ export default function DebugRegistrationCard({
 
 function RegistrationDetailView({
   registrationId,
+  onNavigateToAnimal,
 }: {
   registrationId: string;
+  onNavigateToAnimal: (animal: string) => void;
 }) {
   const query = useQuery({
     queryKey: ["debug-registration", registrationId],
@@ -115,6 +123,7 @@ function RegistrationDetailView({
     <RegistrationDetailBody
       record={query.data}
       onRefresh={() => void query.refetch()}
+      onNavigateToAnimal={onNavigateToAnimal}
     />
   );
 }
@@ -122,12 +131,17 @@ function RegistrationDetailView({
 function RegistrationDetailBody({
   record,
   onRefresh,
+  onNavigateToAnimal,
 }: {
   record: DebugRegistrationDetail;
   onRefresh: () => void;
+  onNavigateToAnimal: (animal: string) => void;
 }) {
   const detail = readDetail(record.detail);
   const failures = detail.inference?.failures ?? [];
+  // Read out of the blob rather than off `detail` at the click, so the narrowing
+  // that proves it is present still holds inside the handler.
+  const collidedWith = detail.matched_godhaar_id;
 
   return (
     <div className="flex flex-col gap-4">
@@ -137,17 +151,18 @@ function RegistrationDetailBody({
         </div>
       )}
 
-      {detail.matched_godhaar_id && (
+      {collidedWith && (
         // Resolved at capture time from whichever animals were nearby then, so
         // it cannot be recovered later. Linked while it still exists.
         <p className="flex flex-wrap items-center gap-2 text-sm">
           <span className="text-muted-foreground">Collided with</span>
-          <Link
-            to={`/debug/searches?decision=all&verified=all&animal=${encodeURIComponent(detail.matched_godhaar_id)}`}
+          <button
+            type="button"
+            onClick={() => onNavigateToAnimal(collidedWith)}
             className="font-mono font-medium underline-offset-4 hover:underline"
           >
-            {detail.matched_godhaar_id}
-          </Link>
+            {collidedWith}
+          </button>
         </p>
       )}
 

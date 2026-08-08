@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { useSearchParams } from "react-router";
+import { useEffect, useState } from "react";
 import {
   ApiError,
   getDebugSearches,
@@ -9,12 +8,13 @@ import {
   type VerifiedState,
 } from "@/lib/api";
 import {
-  filtersFromParams,
+  ALL_SEARCHES,
+  DEFAULT_SEARCH_FILTERS,
   matchesSearchFilters,
-  paramsForFilters,
   type SearchViewFilters,
 } from "@/lib/debug";
 import { formatCount } from "@/lib/format";
+import type { AnimalJump } from "./DebugLayout";
 import ErrorAlert from "./ErrorAlert";
 import DebugErrorPanel from "./DebugErrorPanel";
 import DebugSearchCard from "./DebugSearchCard";
@@ -23,21 +23,42 @@ import LoadingSpinner from "./LoadingSpinner";
 
 const SEARCHES_KEY = "debug-searches";
 
+type DebugSearchesPanelProps = {
+  /** Set by a card elsewhere in the debug section that named this animal. */
+  jump: AnimalJump | null;
+  onJumpHandled: () => void;
+  onNavigateToAnimal: (animal: string) => void;
+};
+
 /**
  * The point of the whole feature. A search that confidently returns the wrong
  * animal looks identical to a correct one from the server's side, so the only
  * thing that can tell them apart is a person comparing the query photos with
  * the animal that was matched — which is what this screen is for.
  */
-export default function DebugSearchesPanel() {
+export default function DebugSearchesPanel({
+  jump,
+  onJumpHandled,
+  onNavigateToAnimal,
+}: DebugSearchesPanelProps) {
   const queryClient = useQueryClient();
-  const [params, setParams] = useSearchParams();
-  const filters = filtersFromParams(params);
+  const [filters, setFilters] = useState<SearchViewFilters>(
+    DEFAULT_SEARCH_FILTERS,
+  );
 
   // Verifying a row normally removes it from the backlog view immediately,
   // which would make the reversibility the contract insists on unreachable.
   // Rows touched in this sitting stay on screen until the filters change.
   const [justReviewed, setJustReviewed] = useState<string[]>([]);
+
+  // A registration or search card elsewhere named this animal — show every
+  // other record touching it, the same way a filter change would.
+  useEffect(() => {
+    if (!jump) return;
+    setFilters({ ...ALL_SEARCHES, animal: jump.animal });
+    setJustReviewed([]);
+    onJumpHandled();
+  }, [jump, onJumpHandled]);
 
   const query = useQuery({
     queryKey: [SEARCHES_KEY],
@@ -98,9 +119,7 @@ export default function DebugSearchesPanel() {
   }
 
   function handleFilters(next: SearchViewFilters) {
-    // Replace rather than push: typing in the ID box would otherwise leave a
-    // history entry per keystroke for the back button to walk out of.
-    setParams(paramsForFilters(next), { replace: true });
+    setFilters(next);
     setJustReviewed([]);
   }
 
@@ -166,6 +185,7 @@ export default function DebugSearchesPanel() {
                   verify.isPending && verify.variables?.id === row.search_id
                 }
                 justReviewed={justReviewed.includes(row.search_id)}
+                onNavigateToAnimal={onNavigateToAnimal}
               />
             </li>
           ))}
