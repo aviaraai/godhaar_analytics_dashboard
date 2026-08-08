@@ -1,22 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useSearchParams } from "react-router";
 import {
   ApiError,
   getDebugSearches,
   verifySearch,
-  type DebugSearch,
+  type DebugSearchCardData,
   type VerifiedState,
 } from "@/lib/api";
 import {
-  ALL_SEARCHES,
-  DEFAULT_SEARCH_FILTERS,
-  isAttributeShifted,
+  filtersFromParams,
   matchesSearchFilters,
-  readDetail,
+  paramsForFilters,
   type SearchViewFilters,
 } from "@/lib/debug";
 import { formatCount } from "@/lib/format";
-import type { AnimalJump } from "./DebugLayout";
 import ErrorAlert from "./ErrorAlert";
 import DebugErrorPanel from "./DebugErrorPanel";
 import DebugSearchCard from "./DebugSearchCard";
@@ -25,42 +23,21 @@ import LoadingSpinner from "./LoadingSpinner";
 
 const SEARCHES_KEY = "debug-searches";
 
-type DebugSearchesPanelProps = {
-  /** Set by a card elsewhere in the debug section that named this animal. */
-  jump: AnimalJump | null;
-  onJumpHandled: () => void;
-  onNavigateToAnimal: (animal: string) => void;
-};
-
 /**
  * The point of the whole feature. A search that confidently returns the wrong
  * animal looks identical to a correct one from the server's side, so the only
  * thing that can tell them apart is a person comparing the query photos with
  * the animal that was matched — which is what this screen is for.
  */
-export default function DebugSearchesPanel({
-  jump,
-  onJumpHandled,
-  onNavigateToAnimal,
-}: DebugSearchesPanelProps) {
+export default function DebugSearchesPanel() {
   const queryClient = useQueryClient();
-  const [filters, setFilters] = useState<SearchViewFilters>(
-    DEFAULT_SEARCH_FILTERS,
-  );
+  const [params, setParams] = useSearchParams();
+  const filters = filtersFromParams(params);
 
   // Verifying a row normally removes it from the backlog view immediately,
   // which would make the reversibility the contract insists on unreachable.
   // Rows touched in this sitting stay on screen until the filters change.
-  const [justReviewed, setJustReviewed] = useState<number[]>([]);
-
-  // A registration or search card elsewhere named this animal — show every
-  // other record touching it, the same way a filter change would.
-  useEffect(() => {
-    if (!jump) return;
-    setFilters({ ...ALL_SEARCHES, animal: jump.animal });
-    setJustReviewed([]);
-    onJumpHandled();
-  }, [jump, onJumpHandled]);
+  const [justReviewed, setJustReviewed] = useState<string[]>([]);
 
   const query = useQuery({
     queryKey: [SEARCHES_KEY],
@@ -73,13 +50,15 @@ export default function DebugSearchesPanel({
   });
 
   const verify = useMutation({
-    mutationFn: ({ id, verified }: { id: number; verified: VerifiedState }) =>
+    mutationFn: ({ id, verified }: { id: string; verified: VerifiedState }) =>
       verifySearch(id, verified),
     onMutate: async ({ id, verified }) => {
       await queryClient.cancelQueries({ queryKey: [SEARCHES_KEY] });
-      const previous = queryClient.getQueryData<DebugSearch[]>([SEARCHES_KEY]);
-      queryClient.setQueryData<DebugSearch[]>([SEARCHES_KEY], (rows) =>
-        rows?.map((row) => (row.id === id ? { ...row, verified } : row)),
+      const previous = queryClient.getQueryData<DebugSearchCardData[]>([
+        SEARCHES_KEY,
+      ]);
+      queryClient.setQueryData<DebugSearchCardData[]>([SEARCHES_KEY], (rows) =>
+        rows?.map((row) => (row.search_id === id ? { ...row, verified } : row)),
       );
       return { previous };
     },
@@ -88,38 +67,51 @@ export default function DebugSearchesPanel({
         queryClient.setQueryData([SEARCHES_KEY], context.previous);
       }
     },
-    // The endpoint answers with the whole updated record, so the row is
-    // replaced rather than invalidated. Refetching would mint a fresh set of
-    // presigned URLs and reload every photo on screen mid-review.
+    // The endpoint answers with the full detail shape, so the card is patched
+    // from it rather than the listing being invalidated — refetching would mint
+    // a fresh set of presigned URLs and reload every photo on screen mid-review.
+    // Only the fields a card actually has are copied across; `thumbnail_url` is
+    // not among them, and taking the record wholesale would blank it.
     onSuccess: (record) => {
-      queryClient.setQueryData<DebugSearch[]>([SEARCHES_KEY], (rows) =>
-        rows?.map((row) => (row.id === record.id ? record : row)),
+      queryClient.setQueryData<DebugSearchCardData[]>([SEARCHES_KEY], (rows) =>
+        rows?.map((row) =>
+          row.search_id === record.search_id
+            ? {
+                ...row,
+                decision: record.decision,
+                verified: record.verified,
+                score: record.score,
+                error_code: record.error_code,
+                godhaar_id: record.godhaar_id,
+              }
+            : row,
+        ),
       );
+      // The opened record, if any, is now stale in the same way.
+      queryClient.setQueryData(["debug-search", record.search_id], record);
     },
   });
 
-  function handleVerify(id: number, verified: VerifiedState) {
+  function handleVerify(id: string, verified: VerifiedState) {
     setJustReviewed((seen) => (seen.includes(id) ? seen : [...seen, id]));
     verify.mutate({ id, verified });
   }
 
   function handleFilters(next: SearchViewFilters) {
-    setFilters(next);
+    // Replace rather than push: typing in the ID box would otherwise leave a
+    // history entry per keystroke for the back button to walk out of.
+    setParams(paramsForFilters(next), { replace: true });
     setJustReviewed([]);
   }
 
   const rows = query.data ?? [];
   const visible = rows.filter(
     (row) =>
-      matchesSearchFilters(row, filters) || justReviewed.includes(row.id),
+      matchesSearchFilters(row, filters) || justReviewed.includes(row.search_id),
   );
 
   const backlog = rows.filter(
     (row) => row.decision === "MATCH" && row.verified === "not_verified",
-  ).length;
-  const drift = rows.filter(
-    (row) =>
-      row.verified === "no" && isAttributeShifted(readDetail(row.detail).reason),
   ).length;
 
   if (query.isError) {
@@ -139,7 +131,6 @@ export default function DebugSearchesPanel({
         onRefresh={() => void query.refetch()}
         busy={query.isFetching}
         backlog={backlog}
-        drift={drift}
         total={rows.length}
       />
 
@@ -167,16 +158,14 @@ export default function DebugSearchesPanel({
       ) : (
         <ul className="flex flex-col gap-4">
           {visible.map((row) => (
-            <li key={row.id}>
+            <li key={row.search_id}>
               <DebugSearchCard
                 row={row}
-                onVerify={(verified) => handleVerify(row.id, verified)}
+                onVerify={(verified) => handleVerify(row.search_id, verified)}
                 pending={
-                  verify.isPending && verify.variables?.id === row.id
+                  verify.isPending && verify.variables?.id === row.search_id
                 }
-                onRefresh={() => void query.refetch()}
-                justReviewed={justReviewed.includes(row.id)}
-                onNavigateToAnimal={onNavigateToAnimal}
+                justReviewed={justReviewed.includes(row.search_id)}
               />
             </li>
           ))}

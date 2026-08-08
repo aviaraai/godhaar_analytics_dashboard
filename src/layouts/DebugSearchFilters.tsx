@@ -5,13 +5,13 @@ import { Input } from "@/components/ui/input";
 import { DECISIONS, VERIFIED_STATES } from "@/lib/api";
 import {
   ALL_SEARCHES,
-  ATTRIBUTE_DRIFT,
   DEFAULT_SEARCH_FILTERS,
   sameFilters,
   type SearchViewFilters,
 } from "@/lib/debug";
 import { formatCount } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import DebugDateRange from "./DebugDateRange";
 
 type DebugSearchFiltersProps = {
   filters: SearchViewFilters;
@@ -20,7 +20,6 @@ type DebugSearchFiltersProps = {
   busy: boolean;
   /** Counts over the whole listing, so a preset can say how much work it holds. */
   backlog: number;
-  drift: number;
   total: number;
 };
 
@@ -33,8 +32,11 @@ const VERIFIED_LABELS: Record<string, string> = {
 /**
  * Applied in memory: the endpoint takes no query parameters and returns the
  * whole table, so filtering is a matter of hiding rows that are already here.
- * That is also what makes the drift combination — an attribute-shifted reason
- * that a reviewer then marked wrong — a filter rather than a feature request.
+ *
+ * Every control below reads a field the card carries. The attribute-drift view
+ * that used to sit alongside these did not — it needed `detail.reason`, which
+ * now lives only on an opened record — so it is gone rather than being answered
+ * with a fetch per row.
  */
 export default function DebugSearchFilters({
   filters,
@@ -42,7 +44,6 @@ export default function DebugSearchFilters({
   onRefresh,
   busy,
   backlog,
-  drift,
   total,
 }: DebugSearchFiltersProps) {
   return (
@@ -53,12 +54,6 @@ export default function DebugSearchFilters({
           count={backlog}
           active={sameFilters(filters, DEFAULT_SEARCH_FILTERS)}
           onSelect={() => onChange(DEFAULT_SEARCH_FILTERS)}
-        />
-        <Preset
-          label="Attribute drift"
-          count={drift}
-          active={sameFilters(filters, ATTRIBUTE_DRIFT)}
-          onSelect={() => onChange(ATTRIBUTE_DRIFT)}
         />
         <Preset
           label="Everything"
@@ -79,8 +74,12 @@ export default function DebugSearchFilters({
         </Button>
       </div>
 
-      <div className="flex flex-col gap-3 border-t pt-3">
-        <ChipRow label="Decision">
+      {/* Two columns from `sm` up. The chip groups and the typed fields are
+          different kinds of control and were reading as one dense block when
+          stacked; side by side, each group gets its own heading and the row of
+          chips stops competing with the inputs for the same line. */}
+      <div className="grid gap-x-8 gap-y-6 border-t pt-4 sm:grid-cols-2">
+        <FilterGroup label="Decision">
           <Chip
             label="All"
             active={filters.decision === "all"}
@@ -94,9 +93,9 @@ export default function DebugSearchFilters({
               onSelect={() => onChange({ ...filters, decision })}
             />
           ))}
-        </ChipRow>
+        </FilterGroup>
 
-        <ChipRow label="Verified">
+        <FilterGroup label="Verified">
           <Chip
             label="All"
             active={filters.verified === "all"}
@@ -110,27 +109,27 @@ export default function DebugSearchFilters({
               onSelect={() => onChange({ ...filters, verified })}
             />
           ))}
-        </ChipRow>
+        </FilterGroup>
 
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-          <Chip
-            label="Attribute shifted"
-            active={filters.attributeShifted}
-            onSelect={() =>
-              onChange({
-                ...filters,
-                attributeShifted: !filters.attributeShifted,
-              })
-            }
+        <FilterGroup label="Date range">
+          <DebugDateRange
+            from={filters.from}
+            to={filters.to}
+            idPrefix="search-filter"
+            onChange={({ from, to }) => onChange({ ...filters, from, to })}
           />
+        </FilterGroup>
 
-          <div className="flex min-w-56 flex-1 items-center gap-2">
+        <FilterGroup label="Godhaar ID">
+          {/* Narrows on the card's `godhaar_id`, so it only ever matches a
+              MATCH — a REVIEW's near miss is a detail-only field. */}
+          <div className="flex w-full max-w-xs items-center gap-2">
             <Input
               value={filters.animal}
               onChange={(event) =>
                 onChange({ ...filters, animal: event.target.value })
               }
-              placeholder="Filter by Godhaar ID"
+              placeholder="Any animal"
               aria-label="Filter by Godhaar ID"
               className="h-8"
             />
@@ -146,13 +145,13 @@ export default function DebugSearchFilters({
               </Button>
             )}
           </div>
-        </div>
+        </FilterGroup>
       </div>
     </section>
   );
 }
 
-function ChipRow({
+function FilterGroup({
   label,
   children,
 }: {
@@ -160,11 +159,11 @@ function ChipRow({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="w-16 shrink-0 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+    <div className="flex flex-col gap-2">
+      <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
         {label}
       </span>
-      {children}
+      <div className="flex flex-wrap items-end gap-2">{children}</div>
     </div>
   );
 }

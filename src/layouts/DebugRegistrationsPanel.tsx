@@ -1,26 +1,26 @@
 import { useQuery } from "@tanstack/react-query";
 import { RotateCwIcon } from "lucide-react";
-import { useState } from "react";
+import { useSearchParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { getDebugRegistrations } from "@/lib/api";
 import {
   ALL_REGISTRATIONS,
   countBy,
   deviceModel,
+  hasRegistrationFilters,
   matchesRegistrationFilters,
-  type RegistrationViewFilters,
+  paramsForRegistrationFilters,
+  registrationFiltersFromParams,
+  withinDateRange,
 } from "@/lib/debug";
 import { formatCount } from "@/lib/format";
 import DebugBreakdown from "./DebugBreakdown";
+import DebugDateRange from "./DebugDateRange";
 import DebugErrorPanel from "./DebugErrorPanel";
 import DebugRegistrationCard from "./DebugRegistrationCard";
 import LoadingSpinner from "./LoadingSpinner";
 
 const REGISTRATIONS_KEY = "debug-registrations";
-
-type DebugRegistrationsPanelProps = {
-  onNavigateToAnimal: (animal: string) => void;
-};
 
 /**
  * Registrations the model refused, and the two breakdowns that answer why:
@@ -28,12 +28,9 @@ type DebugRegistrationsPanelProps = {
  * breakdowns double as the filter, so following a spike to the records behind
  * it is a single click.
  */
-export default function DebugRegistrationsPanel({
-  onNavigateToAnimal,
-}: DebugRegistrationsPanelProps) {
-  const [filters, setFilters] = useState<RegistrationViewFilters>(
-    ALL_REGISTRATIONS,
-  );
+export default function DebugRegistrationsPanel() {
+  const [params, setParams] = useSearchParams();
+  const filters = registrationFiltersFromParams(params);
 
   const query = useQuery({
     queryKey: [REGISTRATIONS_KEY],
@@ -48,8 +45,15 @@ export default function DebugRegistrationsPanel({
 
   // Counted over the whole listing rather than the filtered view: picking one
   // code should not redraw the chart that told you to pick it.
-  const byCode = countBy(rows, (row) => row.error_code);
-  const byModel = countBy(rows, (row) => deviceModel(row.device));
+  //
+  // The date range is the exception, and deliberately so — narrowing to the day
+  // a spike happened is asking *which code spiked then*, so the breakdowns have
+  // to answer for that window rather than for all time.
+  const dated = rows.filter((row) =>
+    withinDateRange(row.created_at, filters.from, filters.to),
+  );
+  const byCode = countBy(dated, (row) => row.error_code);
+  const byModel = countBy(dated, (row) => deviceModel(row.device));
 
   const visible = rows.filter((row) => matchesRegistrationFilters(row, filters));
 
@@ -64,6 +68,25 @@ export default function DebugRegistrationsPanel({
 
   return (
     <>
+      <section className="rounded-xl border bg-card p-4">
+        <div className="flex flex-col gap-2">
+          <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            Date range
+          </span>
+          <DebugDateRange
+            from={filters.from}
+            to={filters.to}
+            idPrefix="registration-filter"
+            onChange={({ from, to }) =>
+              setParams(
+                paramsForRegistrationFilters({ ...filters, from, to }),
+                { replace: true },
+              )
+            }
+          />
+        </div>
+      </section>
+
       <div className="flex flex-wrap gap-4">
         <DebugBreakdown
           title="By error code"
@@ -71,7 +94,13 @@ export default function DebugRegistrationsPanel({
           buckets={byCode}
           active={filters.errorCode}
           onSelect={(errorCode) =>
-            setFilters({ ...filters, errorCode: errorCode ?? undefined })
+            setParams(
+              paramsForRegistrationFilters({
+                ...filters,
+                errorCode: errorCode ?? undefined,
+              }),
+              { replace: true },
+            )
           }
           missingLabel="no code"
         />
@@ -80,7 +109,12 @@ export default function DebugRegistrationsPanel({
           description="Whether one handset is failing more than the rest."
           buckets={byModel}
           active={filters.deviceModel}
-          onSelect={(model) => setFilters({ ...filters, deviceModel: model })}
+          onSelect={(model) =>
+            setParams(
+              paramsForRegistrationFilters({ ...filters, deviceModel: model }),
+              { replace: true },
+            )
+          }
           missingLabel="not reported"
         />
       </div>
@@ -95,13 +129,16 @@ export default function DebugRegistrationsPanel({
           {query.isFetching && !query.isPending && (
             <LoadingSpinner label="Refreshing…" />
           )}
-          {(filters.errorCode !== undefined ||
-            filters.deviceModel !== undefined) && (
+          {hasRegistrationFilters(filters) && (
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              onClick={() => setFilters(ALL_REGISTRATIONS)}
+              onClick={() =>
+                setParams(paramsForRegistrationFilters(ALL_REGISTRATIONS), {
+                  replace: true,
+                })
+              }
             >
               Clear filters
             </Button>
@@ -132,12 +169,8 @@ export default function DebugRegistrationsPanel({
       ) : (
         <ul className="flex flex-col gap-4">
           {visible.map((row) => (
-            <li key={row.id}>
-              <DebugRegistrationCard
-                row={row}
-                onRefresh={() => void query.refetch()}
-                onNavigateToAnimal={onNavigateToAnimal}
-              />
+            <li key={row.registration_id}>
+              <DebugRegistrationCard row={row} />
             </li>
           ))}
         </ul>

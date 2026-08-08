@@ -1,10 +1,59 @@
 import { z } from "zod";
 import {
+  DECISIONS,
+  VERIFIED_STATES,
   type DebugDevice,
-  type DebugSearch,
   type Decision,
   type VerifiedState,
 } from "@/lib/api";
+import { startOfDayUtc, startOfNextDayUtc } from "@/lib/date";
+
+/**
+ * The parts of a search a filter may read. Structural rather than the card type
+ * itself, so the same predicates serve an opened detail record — which carries
+ * these fields too — without either module importing the other's shape.
+ */
+type SearchCardFields = {
+  decision: Decision;
+  verified: VerifiedState;
+  godhaar_id: string | null;
+  created_at: string;
+};
+
+/* -------------------------------------------------------------------------- */
+/* Dates                                                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Both listings carry `created_at` as RFC3339 and nothing else to filter dates
+ * on, so the range is applied here rather than asked of the backend — which
+ * takes no query parameters at all.
+ *
+ * Half-open, `>= from` and `< day after to`, which is both the convention the
+ * Go handlers use elsewhere and the only reading that includes the whole of the
+ * end day. `startOfDayUtc` resolves the picked calendar day in the *reader's*
+ * timezone, which is what someone triaging "the spike on the 6th" means by it.
+ *
+ * An empty bound is unbounded, and a row whose timestamp will not parse is kept
+ * rather than dropped: a diagnostic screen hiding a record because its date is
+ * malformed would suppress exactly the row worth looking at.
+ */
+export function withinDateRange(
+  createdAt: string,
+  from: string,
+  to: string,
+): boolean {
+  const at = Date.parse(createdAt);
+  if (!Number.isFinite(at)) return true;
+
+  const start = startOfDayUtc(from || undefined);
+  if (start && at < Date.parse(start)) return false;
+
+  const end = startOfNextDayUtc(to || undefined);
+  if (end && at >= Date.parse(end)) return false;
+
+  return true;
+}
 
 /* -------------------------------------------------------------------------- */
 /* The `detail` blob                                                           */
@@ -137,44 +186,48 @@ export const deviceModel = (device: DebugDevice | null): string | null =>
 export type SearchViewFilters = {
   decision: Decision | "all";
   verified: VerifiedState | "all";
-  /** Only rows whose `reason` carries the `_attribute_shifted` marker. */
-  attributeShifted: boolean;
   /** Godhaar ID to narrow to, set by following a link from another row. */
   animal: string;
+  /** Calendar days, inclusive of both ends. Empty means unbounded. */
+  from: string;
+  to: string;
 };
 
 /**
  * The unreviewed backlog. This is the screen's whole purpose, and there is a
  * partial index on the backend for exactly this query.
+ *
+ * Undated on purpose: the backlog is everything still unreviewed, and defaulting
+ * it to today would hide the part of it that has been waiting longest.
  */
 export const DEFAULT_SEARCH_FILTERS: SearchViewFilters = {
   decision: "MATCH",
   verified: "not_verified",
-  attributeShifted: false,
   animal: "",
+  from: "",
+  to: "",
 };
 
 export const ALL_SEARCHES: SearchViewFilters = {
   decision: "all",
   verified: "all",
-  attributeShifted: false,
   animal: "",
+  from: "",
+  to: "",
 };
 
 /**
- * The correlation the contract calls the most actionable thing here: a run of
- * attribute-shifted decisions that reviewers then marked wrong is direct
- * evidence the colour or horn classifier has drifted.
+ * Every filterable value is on the card, which is what keeps filtering local
+ * and free. The `_attribute_shifted` view that used to live here is gone with
+ * it: that marker is inside `detail.reason`, the listing no longer carries
+ * `detail`, and reinstating it would mean a detail fetch per row to answer a
+ * question about the set. The marker is still surfaced on each opened record.
+ *
+ * `animal` narrows on `godhaar_id`, so it only ever matches a `MATCH` — the
+ * near miss on a `REVIEW` is likewise a detail-only field.
  */
-export const ATTRIBUTE_DRIFT: SearchViewFilters = {
-  decision: "all",
-  verified: "no",
-  attributeShifted: true,
-  animal: "",
-};
-
 export function matchesSearchFilters(
-  row: DebugSearch,
+  row: SearchCardFields,
   filters: SearchViewFilters,
 ): boolean {
   if (filters.decision !== "all" && row.decision !== filters.decision) {
@@ -183,38 +236,69 @@ export function matchesSearchFilters(
   if (filters.verified !== "all" && row.verified !== filters.verified) {
     return false;
   }
-  if (
-    filters.attributeShifted &&
-    !isAttributeShifted(readDetail(row.detail).reason)
-  ) {
-    return false;
-  }
   if (filters.animal) {
-    const detail = readDetail(row.detail);
-    const ids = [
-      row.matched_animal?.godhaar_id,
-      detail.top_candidate,
-      detail.matched_godhaar_id,
-    ];
     const needle = filters.animal.toLowerCase();
-    if (!ids.some((id) => id?.toLowerCase().includes(needle))) return false;
+    if (!row.godhaar_id?.toLowerCase().includes(needle)) return false;
   }
+  if (!withinDateRange(row.created_at, filters.from, filters.to)) return false;
   return true;
+}
+
+/**
+ * Filters live in the query string, which is what makes "every other record
+ * touching this animal" expressible as an ordinary link — and what lets a
+ * reviewer send someone else exactly the view they are looking at.
+ *
+ * An address with no parameters at all means the default backlog view. Once
+ * any parameter is present the URL is taken as a complete statement of intent,
+ * so an absent one reads as "all" rather than falling back to the default.
+ */
+function oneOf<T extends string>(
+  raw: string | null,
+  allowed: readonly T[],
+): T | "all" {
+  return allowed.includes(raw as T) ? (raw as T) : "all";
+}
+
+export function filtersFromParams(params: URLSearchParams): SearchViewFilters {
+  if ([...params.keys()].length === 0) return DEFAULT_SEARCH_FILTERS;
+  return {
+    decision: oneOf(params.get("decision"), DECISIONS),
+    verified: oneOf(params.get("verified"), VERIFIED_STATES),
+    animal: params.get("animal") ?? "",
+    from: params.get("from") ?? "",
+    to: params.get("to") ?? "",
+  };
+}
+
+export function paramsForFilters(
+  filters: SearchViewFilters,
+): Record<string, string> {
+  const params: Record<string, string> = {
+    decision: filters.decision,
+    verified: filters.verified,
+  };
+  if (filters.animal) params.animal = filters.animal;
+  if (filters.from) params.from = filters.from;
+  if (filters.to) params.to = filters.to;
+  return params;
 }
 
 /** Whether two filter sets would show the same rows — used to light presets. */
 export const sameFilters = (a: SearchViewFilters, b: SearchViewFilters) =>
   a.decision === b.decision &&
   a.verified === b.verified &&
-  a.attributeShifted === b.attributeShifted &&
-  a.animal === b.animal;
+  a.animal === b.animal &&
+  a.from === b.from &&
+  a.to === b.to;
 
 /**
  * Only a `MATCH` asserts an identification, so only a `MATCH` can be confirmed
  * or refuted. Anything else answers 409 — a client bug, not a user error —
  * which is why this gates the controls rather than handling the failure.
  */
-export const isVerifiable = (row: DebugSearch) => row.decision === "MATCH";
+export const isVerifiable = (row: { decision: Decision }) =>
+  row.decision === "MATCH";
 
 /* -------------------------------------------------------------------------- */
 /* Registration filters                                                        */
@@ -225,15 +309,60 @@ export type RegistrationViewFilters = {
   errorCode: string | undefined;
   /** `undefined` for every device; `null` for rows that reported no model. */
   deviceModel: string | null | undefined;
+  /** Calendar days, inclusive of both ends. Empty means unbounded. */
+  from: string;
+  to: string;
 };
 
 export const ALL_REGISTRATIONS: RegistrationViewFilters = {
   errorCode: undefined,
   deviceModel: undefined,
+  from: "",
+  to: "",
 };
 
+/**
+ * "Every device" and "devices that reported no model" are different questions,
+ * and the second one is a real finding — so an absent `model` parameter means
+ * the first and an empty one means the second.
+ */
+export function registrationFiltersFromParams(
+  params: URLSearchParams,
+): RegistrationViewFilters {
+  return {
+    errorCode: params.get("code") ?? undefined,
+    deviceModel: params.has("model") ? params.get("model") || null : undefined,
+    from: params.get("from") ?? "",
+    to: params.get("to") ?? "",
+  };
+}
+
+export function paramsForRegistrationFilters(
+  filters: RegistrationViewFilters,
+): Record<string, string> {
+  const params: Record<string, string> = {};
+  if (filters.errorCode !== undefined) params.code = filters.errorCode;
+  if (filters.deviceModel !== undefined) {
+    params.model = filters.deviceModel ?? "";
+  }
+  if (filters.from) params.from = filters.from;
+  if (filters.to) params.to = filters.to;
+  return params;
+}
+
+/** True when anything is narrowing the view — drives the clear-filters button. */
+export const hasRegistrationFilters = (filters: RegistrationViewFilters) =>
+  filters.errorCode !== undefined ||
+  filters.deviceModel !== undefined ||
+  Boolean(filters.from) ||
+  Boolean(filters.to);
+
 export function matchesRegistrationFilters(
-  row: { error_code: string; device: DebugDevice | null },
+  row: {
+    error_code: string;
+    device: DebugDevice | null;
+    created_at: string;
+  },
   filters: RegistrationViewFilters,
 ): boolean {
   if (filters.errorCode !== undefined && row.error_code !== filters.errorCode) {
@@ -245,6 +374,7 @@ export function matchesRegistrationFilters(
   ) {
     return false;
   }
+  if (!withinDateRange(row.created_at, filters.from, filters.to)) return false;
   return true;
 }
 

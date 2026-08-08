@@ -1,10 +1,10 @@
 import { TriangleAlertIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import type { CctvRequest } from "@/lib/api";
-import { displayStatus, hasCountAnomaly } from "@/lib/cctv";
+import type { CctvRequest, CctvStatus } from "@/lib/api";
+import { displayStatus } from "@/lib/cctv";
 import { formatCount, formatDuration, formatTimestamp } from "@/lib/format";
 import CctvVideo from "./CctvVideo";
 
@@ -13,6 +13,13 @@ type CctvRequestCardProps = {
   onRefresh: () => void;
   /** The run just started from this screen, rather than one read from history. */
   fresh?: boolean;
+  /**
+   * This row came straight back from `POST /analyse`, which leaves
+   * `requested_at`, `completed_at` and `requested_by_email` zero-valued. The
+   * footer is suppressed rather than rendering a 1st-of-January-year-1 stamp;
+   * the same run gains all three once the history refetch lands.
+   */
+  fromAnalyse?: boolean;
 };
 
 /**
@@ -24,8 +31,10 @@ export default function CctvRequestCard({
   row,
   onRefresh,
   fresh,
+  fromAnalyse,
 }: CctvRequestCardProps) {
-  const status = displayStatus(row);
+  const now = useNowWhileRunning(row.status);
+  const status = displayStatus(row, now);
   const place = [
     row.goshala.village,
     row.goshala.mandal,
@@ -69,9 +78,15 @@ export default function CctvRequestCard({
       )}
 
       {status === "running" && (
+        // Elapsed rather than a bare "running": inside the thirty-minute window
+        // a dead run and a live one are genuinely indistinguishable from here,
+        // and how long it has been going is the only thing that helps a reader
+        // judge which they are looking at.
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <Spinner role="presentation" aria-label={undefined} />
-          Still running.
+          Still running
+          {Number.isFinite(Date.parse(row.requested_at)) &&
+            ` · ${formatDuration(now - Date.parse(row.requested_at))}`}
         </p>
       )}
 
@@ -89,16 +104,44 @@ export default function CctvRequestCard({
         <Videos row={row} onRefresh={onRefresh} />
       )}
 
-      <footer className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-        <span>Requested {formatTimestamp(row.requested_at)}</span>
-        {row.completed_at && (
-          <span>Finished {formatTimestamp(row.completed_at)}</span>
-        )}
-        <Elapsed row={row} />
-        {row.requested_by_email && <span>by {row.requested_by_email}</span>}
-      </footer>
+      {!fromAnalyse && (
+        <footer className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          <span>Requested {formatTimestamp(row.requested_at)}</span>
+          {row.completed_at && (
+            <span>Finished {formatTimestamp(row.completed_at)}</span>
+          )}
+          <Elapsed row={row} />
+          {row.requested_by_email && <span>by {row.requested_by_email}</span>}
+        </footer>
+      )}
     </article>
   );
+}
+
+/**
+ * A clock, but only for the rows whose meaning changes with it.
+ *
+ * `displayStatus` turns a stale `running` row into `interrupted` once it passes
+ * the server's thirty-minute ceiling, and it reads the current time to do it —
+ * so without something re-rendering, that reclassification never happens and a
+ * dead run shows a live spinner for as long as the page stays open. Everything
+ * terminal is already final, so it does not tick and this returns a constant.
+ *
+ * Deliberately *not* a refetch: pulling the history again would mint a fresh set
+ * of presigned URLs every minute and reload any video on screen. The row cannot
+ * change on the server anyway — nothing sweeps stranded rows up — so the only
+ * thing that needs to move is this side's reading of the clock.
+ */
+function useNowWhileRunning(status: CctvStatus): number {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (status !== "running") return;
+    const timer = window.setInterval(() => setNow(Date.now()), 30 * 1000);
+    return () => window.clearInterval(timer);
+  }, [status]);
+
+  return now;
 }
 
 function StatusBadge({ status }: { status: ReturnType<typeof displayStatus> }) {
@@ -111,35 +154,26 @@ function StatusBadge({ status }: { status: ReturnType<typeof displayStatus> }) {
 }
 
 /**
- * Both numbers, always, each labelled with what it measures. They are two
- * different measurements and not a measurement plus a correction: peak-in-frame
- * undercounts a camera panning across a herd, and tracked-distinct overcounts a
- * static one whenever the tracker re-acquires an animal as a new ID. The
- * backend does not know which kind of camera it was looking at, so the
- * judgement is left to whoever is reading.
+ * Both numbers, always, each labelled with what it measures — and deliberately
+ * side by side rather than as a total and its subset. `total_clear_animals` is
+ * *not* bounded by `total_animals`: they are measured differently, and a clip
+ * panning across a herd legitimately tracks more distinct animals than were
+ * ever in one frame at once. So there is no anomaly to flag when the second
+ * exceeds the first, and no percentage that would mean anything.
  */
 function Counts({ row }: { row: CctvRequest }) {
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap gap-x-10 gap-y-4">
-        <Count
-          label="Cattle in view (peak)"
-          value={row.cattle_in_view}
-          hint="Most animals visible in any single frame. The honest number for a fixed camera."
-        />
-        <Count
-          label="Cattle observed (tracked)"
-          value={row.cattle_observed}
-          hint="Distinct animals the tracker followed. The honest number for a panning camera."
-        />
-      </div>
-      {hasCountAnomaly(row) && (
-        <p className="flex items-start gap-2 text-xs text-muted-foreground">
-          <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" />
-          Fewer animals tracked than were visible at once, which should not
-          happen — treat this as a tracking anomaly rather than a display error.
-        </p>
-      )}
+    <div className="flex flex-wrap gap-x-10 gap-y-4">
+      <Count
+        label="Animals detected"
+        value={row.total_animals}
+        hint="Every animal the model observed, clear or not — the peak count in any single frame."
+      />
+      <Count
+        label="Clearly tracked"
+        value={row.total_clear_animals}
+        hint="The close-by animals seen clearly enough to follow as distinct individuals."
+      />
     </div>
   );
 }

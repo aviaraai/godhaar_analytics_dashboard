@@ -14,8 +14,8 @@ export default defineConfig({
   server: {
     proxy: {
       "/api": {
-        // target: "http://localhost:8080",
-        target: "http://107.210.222.39:9090",
+        target: "http://localhost:8080",
+        // target: "http://107.210.222.39:9090",
         // POST /cctv/analyse blocks for the whole analysis — the server itself
         // waits up to thirty minutes before giving up. Every proxy in front of
         // it has to be told, or a healthy run dies at whatever round number

@@ -26,13 +26,15 @@ export default function Dashboard() {
   // screen whose value is in the state they hold, and an address per view would
   // trade that away for a link nobody has asked for.
   //
-  // Legacy and CCTV are mounted only after their tab is first opened, though:
-  // mounting either up front would fire a query — Legacy's totals, CCTV's
-  // goshala list and history — for every admin who never looks at that tab.
+  // Legacy is mounted only after its tab is first opened, though: mounting it up
+  // front would fire its totals query for every admin who never looks at it.
   const [legacyOpened, setLegacyOpened] = useState(false);
   if (tab === LEGACY && !legacyOpened) {
     setLegacyOpened(true);
   }
+
+  // Same treatment, and for a stronger reason: CCTV fires two queries on mount,
+  // one of which returns presigned photo URLs that start expiring immediately.
   const [cctvOpened, setCctvOpened] = useState(false);
   if (tab === CCTV && !cctvOpened) {
     setCctvOpened(true);
@@ -43,7 +45,7 @@ export default function Dashboard() {
       <TabsList>
         <TabsTrigger value={CURRENT}>Current data</TabsTrigger>
         <TabsTrigger value={LEGACY}>Legacy data</TabsTrigger>
-        <TabsTrigger value={CCTV}>CCTV analysis</TabsTrigger>
+        <TabsTrigger value={CCTV}>CCTV</TabsTrigger>
       </TabsList>
 
       <TabsContent
@@ -62,11 +64,7 @@ export default function Dashboard() {
         {legacyOpened && <LegacyPanel />}
       </TabsContent>
 
-      <TabsContent
-        value={CCTV}
-        keepMounted
-        className="flex flex-col gap-6 pt-2"
-      >
+      <TabsContent value={CCTV} keepMounted className="flex flex-col gap-6 pt-2">
         {cctvOpened && <CctvPanel />}
       </TabsContent>
     </Tabs>

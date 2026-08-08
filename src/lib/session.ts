@@ -68,15 +68,17 @@ export type Credentials = {
  * questions are asked independently, which is also what makes holding both
  * roles at once work without any further special-casing.
  *
- * A bare string is still accepted on the way in. It costs one line and means a
- * token issued before the claim became a list does not silently authorize
- * nobody.
+ * The key is `app_roles` and the shape is an array, both fixed by the Go
+ * middleware: it reads `claims["app_metadata"]["app_roles"]` and type-asserts it
+ * to a slice. A bare string fails that assertion and authorizes nobody, so it is
+ * rejected here too — this gate exists to predict the backend's answer, and
+ * being more permissive than the API only buys a screen that renders and then
+ * 403s on every request it makes.
  */
 function rolesOf(session: Session): string[] {
-  const role = session.user.app_metadata?.role;
-  if (typeof role === "string") return [role];
-  if (!Array.isArray(role)) return [];
-  return role.filter((value): value is string => typeof value === "string");
+  const roles = session.user.app_metadata?.app_roles;
+  if (!Array.isArray(roles)) return [];
+  return roles.filter((value): value is string => typeof value === "string");
 }
 
 /**

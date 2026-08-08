@@ -25,20 +25,6 @@ export function displayStatus(
   return now - started > ABANDONED_AFTER_MS ? "interrupted" : "running";
 }
 
-/**
- * `cattle_observed` counts distinct animals the tracker followed and is
- * normally at least `cattle_in_view`, the most visible in any one frame. When
- * it is smaller the tracker has done something odd — which is worth saying out
- * loud rather than quietly rendering two numbers that disagree.
- */
-export function hasCountAnomaly(row: CctvRequest): boolean {
-  return (
-    row.cattle_in_view !== null &&
-    row.cattle_observed !== null &&
-    row.cattle_observed < row.cattle_in_view
-  );
-}
-
 /* -------------------------------------------------------------------------- */
 /* Failures                                                                    */
 /* -------------------------------------------------------------------------- */
@@ -53,8 +39,6 @@ export type CctvFailure = {
   canRetry: boolean;
   /** The history row this failure was recorded as, when there is one. */
   requestId?: number;
-  /** Expected for now rather than broken — presented calmly, not in red. */
-  expected?: boolean;
 };
 
 type Advice = Omit<CctvFailure, "code" | "message" | "requestId">;
@@ -77,14 +61,18 @@ const ADVICE: Record<string, Advice> = {
     canRetry: false,
   },
   CCTV_SOURCE_UNAVAILABLE: {
-    title: "Camera integration is not live yet",
-    hint: "Everything else on this tab is real — the goshala list and the history come from the live database. Analysis will start working when the camera integration lands, with no change needed here.",
-    canRetry: false,
-    expected: true,
+    title: "Camera not reachable right now",
+    hint: "No clip could be pulled from this goshala's camera — it is offline, unreachable, or has nothing recorded. Worth trying again.",
+    canRetry: true,
   },
   CCTV_ANALYSIS_FAILED: {
     title: "The model rejected the recording",
-    hint: "The clip was corrupt or in a format the model does not accept. Running it again is unlikely to help.",
+    hint: "The clip was corrupt or in a format the model does not accept. This is terminal for this recording — another run pulls the same clip and fails the same way.",
+    canRetry: false,
+  },
+  CCTV_STORAGE_FAILED: {
+    title: "A file could not be stored",
+    hint: "Our storage failed part-way through — nothing you did caused it, and nothing about this goshala makes it more likely. Try again.",
     canRetry: true,
   },
   CCTV_TIMEOUT: {
@@ -103,9 +91,15 @@ const ADVICE: Record<string, Advice> = {
     canRetry: true,
   },
   INFERENCE_CONTRACT: {
-    title: "Our services disagree about their contract",
-    hint: "A version mismatch between the API and the inference server. The team is already alerted and retrying will not help.",
-    canRetry: false,
+    title: "The analysis service lost track of the job",
+    // Two very different causes share this one code: a genuine version mismatch
+    // between the API and the inference server, and — far more often — the
+    // analysis service restarting mid-run, which drops the job from its
+    // in-memory table. Retry is offered because the second case is both common
+    // and fixed by simply running it again; if it is really a mismatch, the
+    // retry fails identically and the message below is what remains.
+    hint: "The analysis service most likely restarted while this was running. Running it again usually works — if it does not, the two services disagree about their contract and the team needs to look.",
+    canRetry: true,
   },
 };
 
@@ -120,14 +114,23 @@ const detailsSchema = z
   .catch({});
 
 export function describeCctvFailure(error: unknown): CctvFailure {
+  // Not an `ApiError` means no verdict ever arrived: the transport failed, our
+  // own abort fired, or — much more likely — the API's two-minute `WriteTimeout`
+  // cut the connection on an analysis still legitimately running. The row was
+  // opened before any work started and every exit path writes a terminal status,
+  // so the outcome is in the history whatever happened here. Offering "try
+  // again" would start a second camera pull competing with a run that is
+  // probably about to succeed, which is why this one cannot be retried.
   if (!(error instanceof ApiError)) {
     return {
       code: null,
-      ...GENERIC,
+      title: "Lost contact while the analysis was running",
+      hint: "The connection dropped, but the run itself is recorded and most likely still finishing. Refresh the history in a minute rather than starting another analysis.",
+      canRetry: false,
       message:
         error instanceof Error
           ? error.message
-          : "Something went wrong. Please try again.",
+          : "The connection to the server was lost.",
     };
   }
 

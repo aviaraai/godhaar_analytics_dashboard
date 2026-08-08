@@ -120,10 +120,12 @@ async function request(
           : { "Content-Type": "application/json" }),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
-      // Unset for ordinary calls, where the browser's own limits are the right
-      // ones. `AbortSignal.timeout` throws the `DOMException` named
-      // "TimeoutError" the catch below is written to recognise.
-      signal: timeoutMs === undefined ? undefined : AbortSignal.timeout(timeoutMs),
+      // Unset for ordinary calls: `fetch` imposes no deadline of its own, which
+      // is what `/cctv/analyse` needs — it blocks for the length of the
+      // analysis, and any default short enough for a normal request would
+      // abandon a run that is still going to complete.
+      signal:
+        timeoutMs === undefined ? undefined : AbortSignal.timeout(timeoutMs),
     });
   } catch (error) {
     // Our own ceiling rather than the network's, so it deserves its own words:
@@ -298,8 +300,9 @@ const goshalaSchema = z.object({
   state: cctvNullableString,
   latitude: cctvNullableNumber,
   longitude: cctvNullableNumber,
-  // Presigned, 15 minutes, and an empty string when signing failed. A goshala
-  // without a usable photo is still selectable, so this never removes a row.
+  // Presigned, 15 minutes, and an empty string when signing that one photo
+  // failed — never null and never absent. A goshala without a usable photo is
+  // still selectable, so this never removes a row.
   photo_url: z
     .string()
     .nullish()
@@ -330,10 +333,13 @@ const cctvRequestSchema = z.object({
     district: cctvNullableString,
     state: cctvNullableString,
   }),
-  // Both null unless the run succeeded. Two different measurements rather than
-  // one measurement and a correction — see `lib/cctv.ts`.
-  cattle_in_view: cctvNullableNumber,
-  cattle_observed: cctvNullableNumber,
+  // Both null unless the run succeeded. Two independent measurements, and
+  // explicitly *not* a subset and its total: `total_clear_animals` is not
+  // bounded by `total_animals`, because a clip panning across a herd can track
+  // more distinct animals than were ever in one frame at once. Nothing may
+  // render them as a pair or derive a percentage from them.
+  total_animals: cctvNullableNumber,
+  total_clear_animals: cctvNullableNumber,
   // The deliverable: boxes and per-animal IDs drawn on every frame. Presigned,
   // 15 minutes. `source_video_url` is the untouched clip and may be null even
   // on success; the annotated one being absent would itself be a failure.
@@ -367,6 +373,16 @@ export const ANALYSE_TIMEOUT_MS = 35 * 60 * 1000;
  * Every call is a real camera pull, a real model run and two video uploads, so
  * the caller is responsible for making a second press impossible while one is
  * in flight.
+ *
+ * Three fields come back zero-valued here and must not be rendered from this
+ * response: `requested_by_email` is `""`, `requested_at` is `0001-01-01`, and
+ * `completed_at` is null even on success. `getCctvRequests` is authoritative
+ * for all three — hence `fromAnalyse` on the card.
+ *
+ * ⚠️ The API's own `WriteTimeout` is two minutes, well under the thirty the
+ * analysis is allowed. Any clip taking longer has its connection cut server-side
+ * *even though the run completes and is recorded*, so a transport failure here
+ * means "read the history", never "it failed". `describeCctvFailure` says so.
  */
 export async function analyseGoshala(
   goshalaPublicId: string,
@@ -431,28 +447,56 @@ export type DebugDevice = z.infer<typeof deviceSchema>;
 const detailSchema = z.unknown();
 
 /**
+ * A stored photo. `slot` is `front` or `muzzle` on anything the app captured;
+ * a registered animal can also have `left` and `right`. An object key the
+ * backend could not read degrades to `{slot: "unknown", sequence: 0}` rather
+ * than failing the request, so neither field is a closed set here.
+ */
+const debugImageSchema = z.object({
+  slot: z.string(),
+  sequence: z.number(),
+  url: z.string(),
+});
+
+export type DebugImage = z.infer<typeof debugImageSchema>;
+
+/**
  * Resolved by join at read time rather than copied into the debug row, so it
- * always reflects the animal now. On `deleted` only `godhaar_id` survives —
- * hence every other field being nullable.
+ * always reflects the animal now.
+ *
+ * Identity and photos, and deliberately nothing else: breed, age, owner and
+ * location say nothing about whether the model was right, and the photos side
+ * by side are what settles that. `deleted` means the id no longer resolves —
+ * `images` is empty in that case, and the id is still shown because the record
+ * stands as evidence of what the model said.
  */
 const matchedAnimalSchema = z.object({
   godhaar_id: z.string(),
-  animal_type: nullableString,
-  breed: nullableString,
-  gender: nullableString,
-  age: nullableNumber,
-  body_color: nullableString,
-  muzzle_color: nullableString,
-  horn_shape: nullableString,
-  village: nullableString,
-  mandal: nullableString,
-  district: nullableString,
-  state: nullableString,
-  image_url: nullableString,
+  images: z.array(debugImageSchema),
   deleted: z.boolean(),
 });
 
 export type MatchedAnimal = z.infer<typeof matchedAnimalSchema>;
+
+/**
+ * The closed vocabulary shared by refused registrations and `FAILED` searches,
+ * enforced by a database `CHECK` and an allowlist in the inference client.
+ *
+ * Exported for grouping and filter chips, but *not* parsed as an enum: a
+ * diagnostic screen that refuses to render because one row carries a code added
+ * last week is worse than one showing the code raw.
+ */
+export const IDENTIFICATION_ERROR_CODES = [
+  "DUPLICATE_ANIMAL",
+  "NO_ANIMAL_DETECTED",
+  "POOR_IMAGE_QUALITY",
+  "IMAGE_TOO_BLURRY",
+  "IMAGE_BAD_EXPOSURE",
+  "IMAGE_TOO_SMALL",
+  "IMAGE_UNREADABLE",
+  "BODY_COLOR_INCONSISTENT",
+  "MUZZLE_COLOR_INCONSISTENT",
+] as const;
 
 export const DECISIONS = ["MATCH", "REVIEW", "UNKNOWN", "FAILED"] as const;
 export const VERIFIED_STATES = ["yes", "no", "not_verified"] as const;
@@ -461,34 +505,55 @@ export type Decision = (typeof DECISIONS)[number];
 export type VerifiedState = (typeof VERIFIED_STATES)[number];
 
 /**
+ * Both listings are split from their detail views, and the split is the point:
+ * a card carries one thumbnail, while a detail carries every photo, the matched
+ * animal's photos and the decision working. Loading a hundred cards must not
+ * pay for a hundred galleries — so the listing deliberately cannot render one,
+ * and the card types below have no `images` or `detail` to reach for.
+ *
  * The four `decision` values and the three `verified` values are enum columns
  * with DB constraints behind them, so they are parsed as closed sets — an
  * unrecognised one is a contract change worth failing loudly on, not a string
  * to render raw.
  */
-const searchSchema = z.object({
-  id: z.number(),
+const searchCardSchema = z.object({
+  search_id: z.string(),
   decision: z.enum(DECISIONS),
-  // Null only on FAILED, where the model never produced a verdict.
-  score: nullableNumber,
-  // Set only on FAILED. Same vocabulary as the mobile API, so it stays a string.
-  error_code: nullableString,
   verified: z.enum(VERIFIED_STATES),
-  // Null on everything but MATCH: a scored near-miss is not a claim about an
-  // animal, so the contract refuses to present it as one.
-  matched_animal: matchedAnimalSchema
-    .nullish()
-    .transform((value) => value ?? null),
-  image_urls: z.array(z.string()),
-  detail: detailSchema,
+  // Null only on FAILED, where the model never produced a verdict. This is the
+  // model's own similarity score, unmodified; the internally-adjusted value
+  // used for ranking lives in the detail view and is deliberately not here.
+  score: nullableNumber,
+  // FAILED only.
+  error_code: nullableString,
+  // MATCH only — the one decision that names an animal.
+  godhaar_id: nullableString,
+  // The first captured photo. Null when the record kept no images.
+  thumbnail_url: nullableString,
   device: nullableDevice,
-  created_by: nullableString,
+  created_by_email: nullableString,
   created_at: z.string(),
 });
 
-const searchesSchema = z.array(searchSchema);
+const searchCardsSchema = z.array(searchCardSchema);
 
-export type DebugSearch = z.infer<typeof searchSchema>;
+export type DebugSearchCardData = z.infer<typeof searchCardSchema>;
+
+/** The card's fields minus the thumbnail, plus everything it deliberately omits. */
+const searchDetailSchema = searchCardSchema
+  .omit({ thumbnail_url: true })
+  .extend({
+    images: z.array(debugImageSchema),
+    // Null on every decision but MATCH: a scored near-miss is not a claim about
+    // an animal, so the contract refuses to present it as one. The near miss on
+    // a REVIEW is in `detail.top_candidate` instead.
+    matched_animal: matchedAnimalSchema
+      .nullish()
+      .transform((value) => value ?? null),
+    detail: detailSchema,
+  });
+
+export type DebugSearchDetail = z.infer<typeof searchDetailSchema>;
 
 /**
  * Every search attempt, successful or not — successes included because a
@@ -497,27 +562,48 @@ export type DebugSearch = z.infer<typeof searchSchema>;
  *
  * Unpaginated and newest first, on the backend's own assurance that these
  * tables stay small. The filters on the screen are applied in memory for the
- * same reason: the endpoint takes no query parameters.
+ * same reason: the endpoint takes no query parameters at all.
  */
-export async function getDebugSearches(): Promise<DebugSearch[]> {
-  return parse(searchesSchema, await request("/debug/searches"));
+export async function getDebugSearches(): Promise<DebugSearchCardData[]> {
+  return parse(searchCardsSchema, await request("/debug/searches"));
 }
 
-const registrationSchema = z.object({
-  id: z.number(),
+/** The photos and the decision working, fetched only when a card is opened. */
+export async function getDebugSearch(
+  searchId: string,
+): Promise<DebugSearchDetail> {
+  return parse(
+    searchDetailSchema,
+    await request(`/debug/searches/${encodeURIComponent(searchId)}`),
+  );
+}
+
+const registrationCardSchema = z.object({
+  registration_id: z.string(),
   error_code: z.string(),
-  // Empty when the upload itself failed. The row is still written, because the
-  // failure record matters more than its images.
-  image_urls: z.array(z.string()),
-  detail: detailSchema,
+  // The first captured photo, always a front shot. Null when the record kept no
+  // images — the upload can fail without sinking the capture itself.
+  thumbnail_url: nullableString,
   device: nullableDevice,
-  created_by: nullableString,
+  created_by_email: nullableString,
   created_at: z.string(),
 });
 
-const registrationsSchema = z.array(registrationSchema);
+const registrationCardsSchema = z.array(registrationCardSchema);
 
-export type DebugRegistration = z.infer<typeof registrationSchema>;
+export type DebugRegistrationCardData = z.infer<typeof registrationCardSchema>;
+
+const registrationDetailSchema = registrationCardSchema
+  .omit({ thumbnail_url: true })
+  .extend({
+    // Only `front` and `muzzle` ever appear. Left and right photos are validated
+    // but never stored for a refused registration: the upload step runs after
+    // inference succeeds, which by definition it did not.
+    images: z.array(debugImageSchema),
+    detail: detailSchema,
+  });
+
+export type DebugRegistrationDetail = z.infer<typeof registrationDetailSchema>;
 
 /**
  * Registrations the model refused. Successful ones are absent because they are
@@ -525,24 +611,36 @@ export type DebugRegistration = z.infer<typeof registrationSchema>;
  * are absent because the photos played no part in them — so a gap here during
  * an outage is expected rather than a bug.
  */
-export async function getDebugRegistrations(): Promise<DebugRegistration[]> {
-  return parse(registrationsSchema, await request("/debug/registrations"));
+export async function getDebugRegistrations(): Promise<
+  DebugRegistrationCardData[]
+> {
+  return parse(registrationCardsSchema, await request("/debug/registrations"));
+}
+
+export async function getDebugRegistration(
+  registrationId: string,
+): Promise<DebugRegistrationDetail> {
+  return parse(
+    registrationDetailSchema,
+    await request(`/debug/registrations/${encodeURIComponent(registrationId)}`),
+  );
 }
 
 /**
- * Records a human's verdict on a match, and returns the whole updated record.
+ * Records a human's verdict on a match, and answers with the full detail shape
+ * so the card that was just acted on can be replaced without a refetch.
  *
- * Freely reversible in both directions — a reviewer revising a call is normal.
+ * Freely reversible in every direction — a reviewer revising a call is normal.
  * Only a `MATCH` can be verified at all; anything else answers 409, which is
  * why the controls are rendered on nothing else.
  */
 export async function verifySearch(
-  id: number,
+  searchId: string,
   verified: VerifiedState,
-): Promise<DebugSearch> {
+): Promise<DebugSearchDetail> {
   return parse(
-    searchSchema,
-    await request(`/debug/searches/${id}/verify`, {
+    searchDetailSchema,
+    await request(`/debug/searches/${encodeURIComponent(searchId)}/verify`, {
       method: "PATCH",
       body: { verified },
     }),

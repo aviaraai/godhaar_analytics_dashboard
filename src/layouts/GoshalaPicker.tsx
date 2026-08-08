@@ -124,9 +124,10 @@ export default function GoshalaPicker({
 }
 
 /**
- * `photo_url` is presigned for fifteen minutes and comes back empty when
- * signing failed, so both the missing case and the expired case land on the
- * same placeholder. A goshala you cannot see is still a goshala you can pick.
+ * `photo_url` is presigned for fifteen minutes and comes back as an empty string
+ * when signing that one photo failed, so both the missing case and the expired
+ * case land on the same placeholder. A goshala you cannot see is still a goshala
+ * you can pick.
  */
 function GoshalaPhoto({ goshala }: { goshala: Goshala }) {
   const [broken, setBroken] = useState(false);

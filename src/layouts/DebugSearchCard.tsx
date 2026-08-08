@@ -1,7 +1,24 @@
-import { CheckIcon, TrashIcon, UndoIcon, XIcon } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import {
+  CheckIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  ImageOffIcon,
+  TrashIcon,
+  UndoIcon,
+  XIcon,
+} from "lucide-react";
+import { useState } from "react";
+import { Link } from "react-router";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { DebugSearch, Decision, VerifiedState } from "@/lib/api";
+import {
+  getDebugSearch,
+  type DebugSearchCardData,
+  type DebugSearchDetail,
+  type Decision,
+  type VerifiedState,
+} from "@/lib/api";
 import {
   describeReason,
   isAttributeShifted,
@@ -12,16 +29,14 @@ import { formatScore, formatTimestamp } from "@/lib/format";
 import DebugDetail from "./DebugDetail";
 import DebugDevice from "./DebugDevice";
 import DebugImages from "./DebugImages";
+import LoadingSpinner from "./LoadingSpinner";
 
 type DebugSearchCardProps = {
-  row: DebugSearch;
+  row: DebugSearchCardData;
   onVerify: (verified: VerifiedState) => void;
   pending: boolean;
-  onRefresh: () => void;
   /** Verified in this sitting, so it is kept on screen for second thoughts. */
   justReviewed: boolean;
-  /** Switches to the Searches filters for another animal named on this card. */
-  onNavigateToAnimal: (animal: string) => void;
 };
 
 const DECISION_VARIANT: Record<
@@ -35,33 +50,29 @@ const DECISION_VARIANT: Record<
 };
 
 /**
- * One search attempt. For a `MATCH` this is the verification screen itself:
- * the query photos and the matched animal's photo side by side, and one
- * question under them.
+ * One search attempt, as a card. The comparison that actually settles whether
+ * the model was right — query photos beside the matched animal's — lives behind
+ * the disclosure, because it costs a request per record and the listing is read
+ * far more often than any one row is opened.
+ *
+ * The verdict buttons stay on the card rather than moving inside: a reviewer
+ * working the backlog of confident matches is answering the same question over
+ * and over, and making them open every row to answer it would be the slowest
+ * possible way to do the one thing this screen exists for.
  */
 export default function DebugSearchCard({
   row,
   onVerify,
   pending,
-  onRefresh,
   justReviewed,
-  onNavigateToAnimal,
 }: DebugSearchCardProps) {
-  const detail = readDetail(row.detail);
-  const shifted = isAttributeShifted(detail.reason);
-  const reason = describeReason(detail.reason);
-  const animal = row.matched_animal;
+  const [open, setOpen] = useState(false);
 
   return (
     <article className="flex flex-col gap-4 rounded-xl border bg-card p-4">
       <header className="flex flex-wrap items-center gap-2">
         <Badge variant={DECISION_VARIANT[row.decision]}>{row.decision}</Badge>
         <VerifiedBadge verified={row.verified} />
-        {shifted && (
-          // Surfaced rather than buried: a run of these that reviewers then
-          // mark wrong is the clearest evidence of classifier drift there is.
-          <Badge variant="warning">attribute shifted</Badge>
-        )}
         {row.error_code && (
           <Badge variant="destructive" className="font-mono">
             {row.error_code}
@@ -69,12 +80,120 @@ export default function DebugSearchCard({
         )}
         {justReviewed && <Badge variant="muted">just reviewed</Badge>}
         <span className="ml-auto text-xs text-muted-foreground">
-          #{row.id} · {formatTimestamp(row.created_at)}
+          {formatTimestamp(row.created_at)}
         </span>
       </header>
 
+      <div className="flex flex-wrap items-start gap-4">
+        <Thumbnail url={row.thumbnail_url} decision={row.decision} />
+
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1 text-xs">
+            <Stat label="Score" value={formatScore(row.score)} />
+          </div>
+
+          {row.godhaar_id ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-muted-foreground">Matched</span>
+              <AnimalLink id={row.godhaar_id} />
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {row.decision === "FAILED"
+                ? "The model rejected the photos and never produced a verdict."
+                : "No animal was claimed."}
+            </p>
+          )}
+
+          <DebugDevice device={row.device} />
+          <p className="text-[11px] text-muted-foreground">
+            Searched by{" "}
+            <span className="font-mono">{row.created_by_email ?? "—"}</span>
+          </p>
+        </div>
+      </div>
+
+      {isVerifiable(row) && (
+        <VerifyControls
+          verified={row.verified}
+          pending={pending}
+          onVerify={onVerify}
+        />
+      )}
+
+      <div className="flex flex-col gap-3 border-t pt-3">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="w-fit"
+          aria-expanded={open}
+          onClick={() => setOpen((was) => !was)}
+        >
+          {open ? <ChevronDownIcon /> : <ChevronRightIcon />}
+          {open ? "Hide photos and working" : "Photos and decision working"}
+        </Button>
+        {open && <SearchDetailView searchId={row.search_id} />}
+      </div>
+    </article>
+  );
+}
+
+/**
+ * Its own query, keyed by record, so opening a second card does not evict the
+ * first and closing one does not throw away what it fetched. The photos are
+ * presigned for fifteen minutes, which is what `staleTime` is pinned under —
+ * a cached detail must never outlive its own images.
+ */
+function SearchDetailView({ searchId }: { searchId: string }) {
+  const query = useQuery({
+    queryKey: ["debug-search", searchId],
+    queryFn: () => getDebugSearch(searchId),
+    staleTime: 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+  });
+
+  if (query.isPending) return <LoadingSpinner label="Loading record…" />;
+
+  if (query.isError) {
+    return (
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed px-3 py-4">
+        <p className="text-xs text-muted-foreground">{query.error.message}</p>
+        <Button
+          type="button"
+          variant="outline"
+          size="xs"
+          onClick={() => void query.refetch()}
+        >
+          Try again
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <SearchDetailBody
+      record={query.data}
+      onRefresh={() => void query.refetch()}
+    />
+  );
+}
+
+function SearchDetailBody({
+  record,
+  onRefresh,
+}: {
+  record: DebugSearchDetail;
+  onRefresh: () => void;
+}) {
+  const detail = readDetail(record.detail);
+  const reason = describeReason(detail.reason);
+  const shifted = isAttributeShifted(detail.reason);
+  const animal = record.matched_animal;
+
+  return (
+    <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1 text-xs">
-        <Stat label="Score" value={formatScore(row.score)} />
         {/* Both scores together, because that is what makes a demotion legible:
             the model liked it this much, ranking used that. */}
         <Stat label="Adjusted" value={formatScore(detail.adjusted_score)} />
@@ -86,6 +205,11 @@ export default function DebugSearchCard({
         {detail.radius_km !== undefined && (
           <Stat label="Radius" value={`${detail.radius_km} km`} />
         )}
+        {shifted && (
+          // A run of these that reviewers then mark wrong is the clearest
+          // evidence of colour/horn classifier drift there is.
+          <Badge variant="warning">attribute shifted</Badge>
+        )}
       </div>
 
       {reason && <p className="text-sm text-muted-foreground">{reason}</p>}
@@ -96,8 +220,8 @@ export default function DebugSearchCard({
             Query photos
           </h3>
           <DebugImages
-            urls={row.image_urls}
-            label={`Query photo for search ${row.id}`}
+            images={record.images}
+            label="Query photo"
             onRefresh={onRefresh}
             emptyHint="No photos were uploaded with this search."
           />
@@ -108,36 +232,55 @@ export default function DebugSearchCard({
             {animal ? "Matched animal" : "Top candidate"}
           </h3>
           {animal ? (
-            <MatchedAnimal
-              animal={animal}
-              onRefresh={onRefresh}
-              onNavigateToAnimal={onNavigateToAnimal}
-            />
+            <MatchedAnimal animal={animal} onRefresh={onRefresh} />
           ) : (
             <CandidateNote
-              decision={row.decision}
+              decision={record.decision}
               candidate={detail.top_candidate}
-              onNavigateToAnimal={onNavigateToAnimal}
             />
           )}
         </section>
       </div>
 
-      {isVerifiable(row) && (
-        <VerifyControls
-          verified={row.verified}
-          pending={pending}
-          onVerify={onVerify}
-        />
-      )}
+      <DebugDetail detail={record.detail} />
+    </div>
+  );
+}
 
-      <DebugDevice device={row.device} />
-      <p className="text-[11px] text-muted-foreground">
-        Searched by <span className="font-mono">{row.created_by ?? "—"}</span>
-      </p>
+/**
+ * The first captured photo. A dead link degrades to the same placeholder as an
+ * absent one — at card size there is nothing useful to say about the difference,
+ * and the record itself is one click away.
+ */
+function Thumbnail({
+  url,
+  decision,
+}: {
+  url: string | null;
+  decision: Decision;
+}) {
+  const [broken, setBroken] = useState(false);
 
-      <DebugDetail detail={row.detail} />
-    </article>
+  if (!url || broken) {
+    return (
+      <div className="flex size-24 shrink-0 flex-col items-center justify-center gap-1 rounded-lg border border-dashed text-center">
+        <ImageOffIcon className="size-4 text-muted-foreground" />
+        <span className="px-1 text-[10px] leading-tight text-muted-foreground">
+          {decision === "FAILED" ? "rejected" : "no photo"}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={url}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      onError={() => setBroken(true)}
+      className="size-24 shrink-0 rounded-lg bg-muted object-cover"
+    />
   );
 }
 
@@ -159,62 +302,38 @@ function VerifiedBadge({ verified }: { verified: VerifiedState }) {
 }
 
 /**
- * Read live by join, so `deleted` means the animal was removed after the search
- * matched it. Shown with a marker rather than hidden — a search pointing at a
- * deleted animal is itself worth seeing — and everything but the ID is null by
- * then, which is why the attribute list simply comes out empty.
+ * Identity and photos and nothing else — breed, age, owner and location say
+ * nothing about whether the model was right. `deleted` means the id no longer
+ * resolves; the id is still shown, because the record stands as evidence of
+ * what the model said, and `images` simply comes back empty.
  */
 function MatchedAnimal({
   animal,
   onRefresh,
-  onNavigateToAnimal,
 }: {
-  animal: NonNullable<DebugSearch["matched_animal"]>;
+  animal: NonNullable<DebugSearchDetail["matched_animal"]>;
   onRefresh: () => void;
-  onNavigateToAnimal: (animal: string) => void;
 }) {
-  const attributes = [
-    animal.breed,
-    animal.animal_type,
-    animal.gender,
-    animal.age === null ? null : `${animal.age}y`,
-  ].filter((value): value is string => Boolean(value));
-
-  const appearance = [animal.body_color, animal.muzzle_color, animal.horn_shape]
-    .filter((value): value is string => Boolean(value))
-    .join(" · ");
-
-  const place = [animal.village, animal.mandal, animal.district, animal.state]
-    .filter((value): value is string => Boolean(value))
-    .join(", ");
-
   return (
     <div className="flex flex-col gap-2">
       <DebugImages
-        urls={animal.image_url ? [animal.image_url] : []}
+        images={animal.images}
         label={`Registered photo of ${animal.godhaar_id}`}
         onRefresh={onRefresh}
         emptyHint={
           animal.deleted
-            ? "This animal has been deleted, so its photo is gone."
-            : "This animal has no registered photo."
+            ? "This animal has been deleted, so its photos are gone."
+            : "This animal has no registered photos."
         }
       />
       <div className="flex flex-wrap items-center gap-2">
-        <AnimalLink id={animal.godhaar_id} onNavigate={onNavigateToAnimal} />
+        <AnimalLink id={animal.godhaar_id} />
         {animal.deleted && (
           <Badge variant="destructive">
             <TrashIcon /> deleted
           </Badge>
         )}
       </div>
-      {attributes.length > 0 && (
-        <p className="text-sm">{attributes.join(" · ")}</p>
-      )}
-      {appearance && (
-        <p className="text-xs text-muted-foreground">{appearance}</p>
-      )}
-      {place && <p className="text-xs text-muted-foreground">{place}</p>}
     </div>
   );
 }
@@ -228,11 +347,9 @@ function MatchedAnimal({
 function CandidateNote({
   decision,
   candidate,
-  onNavigateToAnimal,
 }: {
   decision: Decision;
   candidate: string | undefined;
-  onNavigateToAnimal: (animal: string) => void;
 }) {
   if (decision === "FAILED") {
     return (
@@ -245,7 +362,7 @@ function CandidateNote({
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-dashed px-3 py-4">
       {candidate ? (
-        <AnimalLink id={candidate} onNavigate={onNavigateToAnimal} />
+        <AnimalLink id={candidate} />
       ) : (
         <p className="text-xs text-muted-foreground">No candidate recorded.</p>
       )}
@@ -259,25 +376,17 @@ function CandidateNote({
 
 /**
  * Every other record touching this animal. There is no animal record screen in
- * this dashboard to point at, so this switches to the thing that does exist
- * and is useful while reviewing: the animal's own debug history, filtered down
- * to it on the Searches tab.
+ * this dashboard to point at, so the link goes to the thing that does exist and
+ * is useful while reviewing: the animal's own debug history.
  */
-function AnimalLink({
-  id,
-  onNavigate,
-}: {
-  id: string;
-  onNavigate: (id: string) => void;
-}) {
+function AnimalLink({ id }: { id: string }) {
   return (
-    <button
-      type="button"
-      onClick={() => onNavigate(id)}
+    <Link
+      to={`/debug/searches?decision=all&verified=all&animal=${encodeURIComponent(id)}`}
       className="font-mono text-sm font-medium underline-offset-4 hover:underline"
     >
       {id}
-    </button>
+    </Link>
   );
 }
 
