@@ -34,6 +34,28 @@ export function formatTimestamp(value: string): string {
 export const formatScore = (value: number | null | undefined) =>
   value === null || value === undefined ? "—" : value.toFixed(3);
 
+const BYTE_UNITS = ["B", "KB", "MB", "GB"];
+
+/**
+ * A file size, at the unit a person would say it in.
+ *
+ * Binary units, because the backend's 512 MB cap is 536,870,912 bytes and every
+ * message about it is a comparison against that number — a file shown as
+ * "537 MB" beside a "512 MB limit" it does not actually exceed would be worse
+ * than no number at all. One decimal below ten so "1.2 GB" and "980 MB" are
+ * both readable, none above it because nobody needs "537.4 MB".
+ */
+export function formatBytes(bytes: number): string {
+  let value = Math.max(0, bytes);
+  let unit = 0;
+  while (value >= 1024 && unit < BYTE_UNITS.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  const rounded = unit === 0 ? value : Number(value.toFixed(value < 10 ? 1 : 0));
+  return `${rounded} ${BYTE_UNITS[unit]}`;
+}
+
 /**
  * Elapsed time, for a wait measured in minutes. Seconds are kept all the way
  * up because the number is watched while it climbs — a counter that stops

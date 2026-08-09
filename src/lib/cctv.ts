@@ -1,5 +1,11 @@
 import { z } from "zod";
-import { ApiError, type CctvRequest } from "@/lib/api";
+import {
+  ApiError,
+  UploadInterruptedError,
+  WaitAbandonedError,
+  type CctvRequest,
+} from "@/lib/api";
+import { formatBytes } from "@/lib/format";
 
 /**
  * A row is written the moment the button is pressed, so an attempt is recorded
@@ -23,6 +29,84 @@ export function displayStatus(
   const started = Date.parse(row.requested_at);
   if (!Number.isFinite(started)) return "running";
   return now - started > ABANDONED_AFTER_MS ? "interrupted" : "running";
+}
+
+/* -------------------------------------------------------------------------- */
+/* The file being uploaded                                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * 536,870,912 bytes, and a backstop rather than a working limit: a thirty-second
+ * clip is a few tens of megabytes, three orders of magnitude short of this. A
+ * file that hits it is almost always the wrong file.
+ */
+export const MAX_VIDEO_BYTES = 512 * 1024 * 1024;
+
+/**
+ * What the API accepts. The extension is not a formality — it decides how the
+ * clip is stored and how it is served back — so it is checked rather than
+ * trusted to the file dialog.
+ */
+export const VIDEO_EXTENSIONS = [
+  ".mp4",
+  ".mov",
+  ".m4v",
+  ".webm",
+  ".mkv",
+  ".avi",
+];
+
+/** Filters the file dialog. Not a guarantee: anything can still be chosen. */
+export const VIDEO_ACCEPT = VIDEO_EXTENSIONS.join(",");
+
+/**
+ * Containers no browser will play in a `<video>` element. They upload and
+ * analyse perfectly well — the annotated result is always MP4 — but the
+ * *original* clip in one of these can only be downloaded, and offering a player
+ * that fails is how a working analysis gets mistaken for a broken one.
+ */
+const UNPLAYABLE_EXTENSIONS = [".mkv", ".avi"];
+
+function extensionOf(name: string): string {
+  const dot = name.lastIndexOf(".");
+  return dot === -1 ? "" : name.slice(dot).toLowerCase();
+}
+
+/**
+ * Everything the server would reject, caught before a byte is sent. The same
+ * verdict from the server costs a full upload and a round trip first, which on
+ * a mis-picked half-gigabyte file is minutes spent to be told no.
+ *
+ * Returns the reason, or `null` when the file is fine.
+ */
+export function validateVideoFile(file: File): string | null {
+  const extension = extensionOf(file.name);
+  if (!VIDEO_EXTENSIONS.includes(extension)) {
+    return `${extension || "That file"} cannot be analysed. Choose an MP4, MOV, M4V, WebM, MKV or AVI.`;
+  }
+  // Checked here as well as on the server because an empty file is usually a
+  // copy that has not finished, and saying so now saves finding out later.
+  if (file.size === 0) return "That file is empty.";
+  if (file.size > MAX_VIDEO_BYTES) {
+    return `That video is ${formatBytes(file.size)}, over the ${formatBytes(MAX_VIDEO_BYTES)} limit. Check you picked the right file.`;
+  }
+  return null;
+}
+
+/**
+ * Read off the URL's path, since the presigned query string is not part of the
+ * filename. Only the two known-unplayable containers are refused: an unfamiliar
+ * or missing extension keeps the player, where `CctvVideo`'s own error handling
+ * catches it, rather than sending a perfectly playable MP4 to a download link.
+ */
+export function isPlayableInBrowser(url: string): boolean {
+  let pathname = url;
+  try {
+    pathname = new URL(url).pathname;
+  } catch {
+    // A relative or malformed URL still has a path-shaped tail worth reading.
+  }
+  return !UNPLAYABLE_EXTENSIONS.includes(extensionOf(pathname));
 }
 
 /* -------------------------------------------------------------------------- */
@@ -67,8 +151,36 @@ const ADVICE: Record<string, Advice> = {
   },
   CCTV_ANALYSIS_FAILED: {
     title: "The model rejected the recording",
-    hint: "The clip was corrupt or in a format the model does not accept. This is terminal for this recording — another run pulls the same clip and fails the same way.",
+    hint: "The clip was corrupt or in a format the model does not accept. This is terminal for this recording — another run reads the same clip and fails the same way.",
     canRetry: false,
+  },
+  CCTV_VIDEO_REQUIRED: {
+    title: "No video reached the server",
+    hint: "Choose a video file and run the analysis again.",
+    canRetry: false,
+  },
+  CCTV_VIDEO_TOO_LARGE: {
+    // The local check normally catches this first, so arriving here means the
+    // browser and the server disagree about the cap — worth saying plainly.
+    title: "That video is over the size limit",
+    hint: `The limit is ${formatBytes(MAX_VIDEO_BYTES)}, far more than a normal clip needs, so this usually means the wrong file was picked.`,
+    canRetry: false,
+  },
+  CCTV_VIDEO_UNSUPPORTED_FORMAT: {
+    title: "That file format is not accepted",
+    hint: `Accepted formats are ${VIDEO_EXTENSIONS.join(", ")}.`,
+    canRetry: false,
+  },
+  CCTV_VIDEO_UNREADABLE: {
+    title: "The video arrived unreadable",
+    hint: "The file reached the server empty or truncated, which points at the upload being cut short rather than at anything wrong with the file. Worth sending it again.",
+    canRetry: true,
+  },
+  CCTV_RESULT_NOT_SAVED: {
+    // Emphatically not "nothing happened": the model ran and the videos exist.
+    title: "The analysis ran, but its result was not saved",
+    hint: "The model finished and the videos were stored — only the history row failed to write, so the counts from this run are lost. Running it again is safe.",
+    canRetry: true,
   },
   CCTV_STORAGE_FAILED: {
     title: "A file could not be stored",
@@ -108,12 +220,64 @@ const GENERIC: Advice = {
   canRetry: true,
 };
 
-/** `details.request_id`, so a failed run can be pointed at in the history. */
+/**
+ * `request_id`, so a failed run can be pointed at in the history, plus the two
+ * values the upload handler sends with its rejections.
+ */
 const detailsSchema = z
-  .object({ request_id: z.number().optional().catch(undefined) })
+  .object({
+    request_id: z.number().optional().catch(undefined),
+    max_bytes: z.number().optional().catch(undefined),
+    allowed_extensions: z.array(z.string()).optional().catch(undefined),
+  })
   .catch({});
 
+type Details = z.infer<typeof detailsSchema>;
+
+/**
+ * The cap and the format list are the backend's to change, so wherever it sends
+ * its own the wording above defers to them — a dashboard confidently quoting a
+ * limit that moved last week is worse than one quoting no limit at all.
+ */
+function liveHint(code: string | null, details: Details): string | undefined {
+  if (code === "CCTV_VIDEO_TOO_LARGE" && details.max_bytes !== undefined) {
+    return `The limit is ${formatBytes(details.max_bytes)}, far more than a normal clip needs, so this usually means the wrong file was picked.`;
+  }
+  if (
+    code === "CCTV_VIDEO_UNSUPPORTED_FORMAT" &&
+    details.allowed_extensions?.length
+  ) {
+    return `Accepted formats are ${details.allowed_extensions.join(", ")}.`;
+  }
+  return undefined;
+}
+
 export function describeCctvFailure(error: unknown): CctvFailure {
+  // Nothing was analysed and nothing was recorded, because the request never
+  // arrived whole. The only CCTV failure where retrying is straightforwardly
+  // the right advice.
+  if (error instanceof UploadInterruptedError) {
+    return {
+      code: null,
+      title: "The upload did not finish",
+      hint: "The video never reached the server, so no analysis was started and nothing was recorded. Try again.",
+      canRetry: true,
+      message: error.message,
+    };
+  }
+
+  // A deliberate walk-away, not a fault. The run carries on regardless — the
+  // only thing that stopped was this page listening for the answer.
+  if (error instanceof WaitAbandonedError) {
+    return {
+      code: null,
+      title: "You stopped waiting",
+      hint: "The analysis is still running on the server and will finish on its own. Refresh the history in a minute to see how it went.",
+      canRetry: false,
+      message: error.message,
+    };
+  }
+
   // Not an `ApiError` means no verdict ever arrived: the transport failed, our
   // own abort fired, or — much more likely — the API's two-minute `WriteTimeout`
   // cut the connection on an analysis still legitimately running. The row was
@@ -134,10 +298,14 @@ export function describeCctvFailure(error: unknown): CctvFailure {
     };
   }
 
+  const details = detailsSchema.parse(error.details);
+  const advice = error.code ? (ADVICE[error.code] ?? GENERIC) : GENERIC;
+
   return {
     code: error.code,
-    ...(error.code ? (ADVICE[error.code] ?? GENERIC) : GENERIC),
+    ...advice,
+    hint: liveHint(error.code, details) ?? advice.hint,
     message: error.message,
-    requestId: detailsSchema.parse(error.details).request_id,
+    requestId: details.request_id,
   };
 }

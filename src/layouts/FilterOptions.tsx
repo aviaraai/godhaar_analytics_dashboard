@@ -1,9 +1,11 @@
+import { BREED_OPTIONS } from "@/constants/breeds";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getDistricts, getMandals, getStates } from "@/lib";
 import type {
   District,
   FilterFormValues,
+  LocationOption,
   Mandal,
   State,
 } from "@/lib/types";
@@ -38,6 +40,8 @@ export default function FilterOptions({
   const selectedState = states.find((s) => s.id === values.state) ?? null;
   const selectedDistrict = districts.find((d) => d.id === values.district) ?? null;
   const selectedMandal = mandals.find((m) => m.id === values.mandal) ?? null;
+  const selectedBreed =
+    BREED_OPTIONS.find((b) => b.id === values.breed) ?? null;
 
   // Narrowing a parent drops whatever no longer sits underneath it.
   const setState = (next: State | null) =>
@@ -46,6 +50,10 @@ export default function FilterOptions({
     onChange({ ...values, district: next?.id, mandal: undefined });
   const setMandal = (next: Mandal | null) =>
     onChange({ ...values, mandal: next?.id });
+  // Independent of the place fields: a breed is not owned by a mandal, so
+  // nothing above it clears it and it clears nothing below.
+  const setBreed = (next: LocationOption | null) =>
+    onChange({ ...values, breed: next?.id });
 
   return (
     <form
@@ -55,7 +63,7 @@ export default function FilterOptions({
       }}
       className="flex flex-col gap-4 rounded-xl border bg-card p-4"
     >
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <LocationField
           id="filter-state"
           label="State"
@@ -84,6 +92,15 @@ export default function FilterOptions({
           onValueChange={setMandal}
           disabled={!values.district}
           emptyMessage="No matching mandal"
+        />
+        <LocationField
+          id="filter-breed"
+          label="Breed"
+          placeholder="All breeds"
+          items={BREED_OPTIONS}
+          value={selectedBreed}
+          onValueChange={setBreed}
+          emptyMessage="No matching breed"
         />
         <DateField
           id="filter-from-date"

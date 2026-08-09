@@ -13,11 +13,14 @@ import {
   type DebugRegistrationDetail,
 } from "@/lib/api";
 import { readDetail } from "@/lib/debug";
+import { photoBatch } from "@/lib/download";
 import { formatTimestamp } from "@/lib/format";
 import DebugDetail from "./DebugDetail";
 import DebugDevice from "./DebugDevice";
+import DebugDownloadAll from "./DebugDownloadAll";
 import DebugFailures from "./DebugFailures";
 import DebugImages from "./DebugImages";
+import DebugMatchedAnimal, { AnimalLink } from "./DebugMatchedAnimal";
 import LoadingSpinner from "./LoadingSpinner";
 
 type DebugRegistrationCardProps = {
@@ -139,9 +142,25 @@ function RegistrationDetailBody({
 }) {
   const detail = readDetail(record.detail);
   const failures = detail.inference?.failures ?? [];
-  // Read out of the blob rather than off `detail` at the click, so the narrowing
-  // that proves it is present still holds inside the handler.
-  const collidedWith = detail.matched_godhaar_id;
+  const animal = record.matched_animal;
+  // Only reached when the join came back empty. `matched_animal.godhaar_id` is
+  // the id to read whenever there is one — it is the one guaranteed to agree
+  // with the photos printed beside it — and the blob's copy is what is left
+  // when the FAISS id could not be mapped back to an animal at all. Read out of
+  // the blob rather than off `detail` at the click, so the narrowing that proves
+  // it is present still holds inside the handler.
+  const unresolved = animal ? undefined : detail.matched_godhaar_id;
+  const duplicate = record.error_code === "DUPLICATE_ANIMAL";
+
+  const submitted = (
+    <DebugImages
+      images={record.images}
+      label="Registration photo"
+      origin="uploaded"
+      onRefresh={onRefresh}
+      emptyHint="The upload failed, so this record has no photos. The failure itself is still recorded."
+    />
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -151,27 +170,59 @@ function RegistrationDetailBody({
         </div>
       )}
 
-      {collidedWith && (
-        // Resolved at capture time from whichever animals were nearby then, so
-        // it cannot be recovered later. Linked while it still exists.
+      {unresolved && (
+        // Recorded at capture time against whichever animals were nearby then,
+        // and the join to that animal did not come back — so all there is to
+        // show is the id itself. Linked, in case it still exists.
         <p className="flex flex-wrap items-center gap-2 text-sm">
           <span className="text-muted-foreground">Collided with</span>
-          <button
-            type="button"
-            onClick={() => onNavigateToAnimal(collidedWith)}
-            className="font-mono font-medium underline-offset-4 hover:underline"
-          >
-            {collidedWith}
-          </button>
+          <AnimalLink id={unresolved} onNavigate={onNavigateToAnimal} />
         </p>
       )}
 
-      <DebugImages
-        images={record.images}
-        label="Registration photo"
-        onRefresh={onRefresh}
-        emptyHint="The upload failed, so this record has no photos. The failure itself is still recorded."
-      />
+      {duplicate && !animal && !unresolved && (
+        // The inference server names the duplicate by FAISS id, and an id that
+        // is not in the candidate set this server sent cannot be mapped back to
+        // an animal. The verdict still stands; there is simply nothing to put
+        // beside it.
+        <p className="text-sm text-muted-foreground">
+          The model called this a duplicate but did not name an animal we could
+          resolve, so there is nothing to compare these photos against.
+        </p>
+      )}
+
+      {/* Above the photos rather than inside either column: what is worth
+          keeping off a duplicate is both sides of the comparison, and the
+          filenames are the only thing that will still say which was which. */}
+      <DebugDownloadAll photos={photoBatch(record.images, animal?.images)} />
+
+      {animal ? (
+        // The whole point of a duplicate rejection being reviewable: what was
+        // submitted and what it was refused in favour of, in two columns. Both
+        // sides carry `front` and `muzzle` and are laid out in that order, so
+        // front lines up with front — and the animal's side photos are absent
+        // on purpose, because the model never saw them.
+        <div className="grid gap-4 md:grid-cols-2">
+          <section className="flex flex-col gap-2">
+            <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              Submitted photos
+            </h3>
+            {submitted}
+          </section>
+          <section className="flex flex-col gap-2">
+            <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              Rejected in favour of
+            </h3>
+            <DebugMatchedAnimal
+              animal={animal}
+              onRefresh={onRefresh}
+              onNavigateToAnimal={onNavigateToAnimal}
+            />
+          </section>
+        </div>
+      ) : (
+        submitted
+      )}
 
       <DebugFailures failures={failures} />
 

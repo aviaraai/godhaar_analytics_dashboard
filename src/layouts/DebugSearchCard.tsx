@@ -4,7 +4,6 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   ImageOffIcon,
-  TrashIcon,
   UndoIcon,
   XIcon,
 } from "lucide-react";
@@ -24,10 +23,13 @@ import {
   isVerifiable,
   readDetail,
 } from "@/lib/debug";
+import { photoBatch } from "@/lib/download";
 import { formatScore, formatTimestamp } from "@/lib/format";
 import DebugDetail from "./DebugDetail";
 import DebugDevice from "./DebugDevice";
+import DebugDownloadAll from "./DebugDownloadAll";
 import DebugImages from "./DebugImages";
+import DebugMatchedAnimal, { AnimalLink } from "./DebugMatchedAnimal";
 import LoadingSpinner from "./LoadingSpinner";
 
 type DebugSearchCardProps = {
@@ -232,6 +234,11 @@ function SearchDetailBody({
 
       {reason && <p className="text-sm text-muted-foreground">{reason}</p>}
 
+      {/* The query photos and the animal they were matched against, in one
+          press. Only a MATCH has a second side to take; on everything else this
+          is just the submitted photos, and it disappears below two of them. */}
+      <DebugDownloadAll photos={photoBatch(record.images, animal?.images)} />
+
       <div className="grid gap-4 md:grid-cols-2">
         <section className="flex flex-col gap-2">
           <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
@@ -240,6 +247,7 @@ function SearchDetailBody({
           <DebugImages
             images={record.images}
             label="Query photo"
+            origin="uploaded"
             onRefresh={onRefresh}
             emptyHint="No photos were uploaded with this search."
           />
@@ -250,7 +258,7 @@ function SearchDetailBody({
             {animal ? "Matched animal" : "Top candidate"}
           </h3>
           {animal ? (
-            <MatchedAnimal
+            <DebugMatchedAnimal
               animal={animal}
               onRefresh={onRefresh}
               onNavigateToAnimal={onNavigateToAnimal}
@@ -325,45 +333,6 @@ function VerifiedBadge({ verified }: { verified: VerifiedState }) {
 }
 
 /**
- * Identity and photos and nothing else — breed, age, owner and location say
- * nothing about whether the model was right. `deleted` means the id no longer
- * resolves; the id is still shown, because the record stands as evidence of
- * what the model said, and `images` simply comes back empty.
- */
-function MatchedAnimal({
-  animal,
-  onRefresh,
-  onNavigateToAnimal,
-}: {
-  animal: NonNullable<DebugSearchDetail["matched_animal"]>;
-  onRefresh: () => void;
-  onNavigateToAnimal: (animal: string) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      <DebugImages
-        images={animal.images}
-        label={`Registered photo of ${animal.godhaar_id}`}
-        onRefresh={onRefresh}
-        emptyHint={
-          animal.deleted
-            ? "This animal has been deleted, so its photos are gone."
-            : "This animal has no registered photos."
-        }
-      />
-      <div className="flex flex-wrap items-center gap-2">
-        <AnimalLink id={animal.godhaar_id} onNavigate={onNavigateToAnimal} />
-        {animal.deleted && (
-          <Badge variant="destructive">
-            <TrashIcon /> deleted
-          </Badge>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/**
  * `REVIEW` and `UNKNOWN` scored a candidate but carry no matched animal, and
  * the contract is emphatic about why: promoting a near-miss to a verifiable
  * claim would misrepresent what the model said. So it is labelled as context
@@ -398,30 +367,6 @@ function CandidateNote({
         here to confirm or refute.
       </p>
     </div>
-  );
-}
-
-/**
- * Every other record touching this animal. There is no animal record screen in
- * this dashboard to point at, so this switches to the thing that does exist
- * and is useful while reviewing: the animal's own debug history, filtered down
- * to it on the Searches tab.
- */
-function AnimalLink({
-  id,
-  onNavigate,
-}: {
-  id: string;
-  onNavigate: (id: string) => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={() => onNavigate(id)}
-      className="font-mono text-sm font-medium underline-offset-4 hover:underline"
-    >
-      {id}
-    </button>
   );
 }
 

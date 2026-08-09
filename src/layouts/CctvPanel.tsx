@@ -1,16 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { InfoIcon, RotateCwIcon, TriangleAlertIcon, VideoIcon } from "lucide-react";
-import { useState } from "react";
+import { InfoIcon, RotateCwIcon, TriangleAlertIcon } from "lucide-react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   analyseGoshala,
+  analyseGoshalaVideo,
   getCctvRequests,
   getGoshalas,
   UnauthorizedError,
+  type UploadProgress,
 } from "@/lib/api";
-import { describeCctvFailure, type CctvFailure } from "@/lib/cctv";
+import {
+  describeCctvFailure,
+  validateVideoFile,
+  type CctvFailure,
+} from "@/lib/cctv";
 import CctvProgress from "./CctvProgress";
 import CctvRequestCard from "./CctvRequestCard";
+import CctvUpload from "./CctvUpload";
 import GoshalaPicker from "./GoshalaPicker";
 import LoadingSpinner from "./LoadingSpinner";
 
@@ -18,17 +25,36 @@ const GOSHALAS_KEY = "cctv-goshalas";
 const REQUESTS_KEY = "cctv-requests";
 
 /**
- * Pick a goshala, run the model over its camera feed, read the history back.
+ * Which of the two ways in a run was started. The distinction lives only on
+ * this side: both endpoints do the same analysis, write the same history row
+ * and answer with the same object, and the response does not say which was
+ * used — so nothing downstream of the mutation needs to know.
+ */
+type AnalyseInput =
+  | { source: "camera"; goshalaPublicId: string }
+  | { source: "upload"; goshalaPublicId: string; file: File };
+
+/**
+ * Pick a goshala, run the model over a clip from it, read the history back.
  *
- * The analysis is one blocking call rather than a job id to poll — the server
- * holds the request open until the model answers — so there is no polling here
- * and `CctvProgress` stands in for the wait. Thirty minutes is the server's own
- * ceiling; past that `displayStatus` reports the row as interrupted rather than
- * running, which is why an abandoned run never shows a live spinner.
+ * Upload is the way in that works everywhere; the camera is offered second
+ * because it is not wired up in every environment. Either way the analysis is
+ * one blocking call rather than a job id to poll — the server holds the request
+ * open until the model answers — so there is no polling here and `CctvProgress`
+ * stands in for the wait. Thirty minutes is the server's own ceiling; past that
+ * `displayStatus` reports the row as interrupted rather than running, which is
+ * why an abandoned run never shows a live spinner.
  */
 export default function CctvPanel() {
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<string | null>(null);
+  // The clip belongs to the goshala it was recorded at, so it is held beside
+  // the selection and dropped whenever that changes. There is no house clip
+  // that stands in for every goshala.
+  const [file, setFile] = useState<File | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<UploadProgress | null>(null);
+  const abort = useRef<AbortController | null>(null);
 
   const goshalas = useQuery({
     queryKey: [GOSHALAS_KEY],
@@ -47,13 +73,42 @@ export default function CctvPanel() {
   });
 
   const analyse = useMutation({
-    mutationFn: analyseGoshala,
+    mutationFn: (input: AnalyseInput) => {
+      if (input.source === "camera") return analyseGoshala(input.goshalaPublicId);
+      const controller = new AbortController();
+      abort.current = controller;
+      return analyseGoshalaVideo(input, {
+        onProgress: setProgress,
+        signal: controller.signal,
+      });
+    },
+    // Seeded rather than left null so the first paint of an upload is already a
+    // bar: `null` is what tells `CctvProgress` there is no upload phase at all,
+    // and the first progress event can be a second or more away on a big file.
+    onMutate: (input) => {
+      setProgress(
+        input.source === "upload" ? { phase: "uploading", percent: null } : null,
+      );
+    },
+    // A clip that has been analysed should not sit in the input still armed —
+    // a stray second press is another full upload and another history row.
+    onSuccess: () => setFile(null),
     // Settled, not success: a run that failed is still a row in the history,
     // and the failure card points at it by id.
     onSettled: () => {
+      abort.current = null;
       void queryClient.invalidateQueries({ queryKey: [REQUESTS_KEY] });
     },
   });
+
+  function pickFile(next: File | null) {
+    setFile(next);
+    setFileError(next ? validateVideoFile(next) : null);
+    // The previous attempt's verdict was about the previous clip. Only an error
+    // is cleared: a result worth reading stays on screen while the next file is
+    // chosen.
+    if (analyse.isError) analyse.reset();
+  }
 
   const selectedGoshala =
     goshalas.data?.find((goshala) => goshala.public_id === selected) ?? null;
@@ -73,6 +128,10 @@ export default function CctvPanel() {
       ? describeCctvFailure(analyse.error)
       : null;
 
+  // What was last sent, kept whole so a retry repeats it exactly — including
+  // the `File`, which is still in memory and does not need picking again.
+  const lastInput = analyse.variables;
+
   function refreshHistory() {
     void queryClient.invalidateQueries({ queryKey: [REQUESTS_KEY] });
   }
@@ -84,7 +143,10 @@ export default function CctvPanel() {
         selected={selected}
         onSelect={(publicId) => {
           setSelected(publicId);
-          // The previous run's outcome belongs to the previous goshala.
+          // The previous run's outcome belongs to the previous goshala, and so
+          // does the clip that was picked for it.
+          setFile(null);
+          setFileError(null);
           analyse.reset();
         }}
         disabled={analyse.isPending}
@@ -94,38 +156,60 @@ export default function CctvPanel() {
         onRetry={() => void goshalas.refetch()}
       />
 
-      <section className="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-4">
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <h2 className="font-heading text-sm font-medium">Camera analysis</h2>
-          <p className="text-xs text-muted-foreground">
-            {selectedGoshala
-              ? `Ready to analyse ${selectedGoshala.name}.`
-              : "Choose a goshala above to enable this."}
-          </p>
-        </div>
-        <Button
-          type="button"
-          className="ml-auto"
-          disabled={!selected || analyse.isPending}
-          onClick={() => {
-            if (selected) analyse.mutate(selected);
+      {/* Deliberately gated on the selection rather than merely disabled: a clip
+          is footage from one goshala, and an upload control offered before one
+          is chosen invites picking the file first and the subject afterwards. */}
+      {selectedGoshala ? (
+        <CctvUpload
+          goshala={selectedGoshala}
+          file={file}
+          onPick={pickFile}
+          error={fileError}
+          busy={analyse.isPending}
+          onAnalyse={() => {
+            if (file && !fileError) {
+              analyse.mutate({
+                source: "upload",
+                goshalaPublicId: selectedGoshala.public_id,
+                file,
+              });
+            }
           }}
-        >
-          <VideoIcon data-icon="inline-start" />
-          {analyse.isPending ? "Analysing…" : "Run analysis"}
-        </Button>
-      </section>
+          onUseCamera={() =>
+            analyse.mutate({
+              source: "camera",
+              goshalaPublicId: selectedGoshala.public_id,
+            })
+          }
+        />
+      ) : (
+        <section className="rounded-xl border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
+          Choose a goshala above to upload footage from it.
+        </section>
+      )}
 
       {analyse.isPending && selectedGoshala && (
-        <CctvProgress goshalaName={selectedGoshala.name} />
+        <CctvProgress
+          goshalaName={selectedGoshala.name}
+          progress={progress}
+          // Only the upload path holds something abortable. A camera pull is
+          // already committed by the time the request is out.
+          onStopWaiting={
+            lastInput?.source === "upload"
+              ? () => abort.current?.abort()
+              : undefined
+          }
+        />
       )}
 
       {failure && (
         <FailureCard
           failure={failure}
           onRetry={
-            selected && failure.canRetry
-              ? () => analyse.mutate(selected)
+            // The same input again, whichever way it was started — including
+            // the same file, which means a second full upload. Never automatic.
+            lastInput && failure.canRetry
+              ? () => analyse.mutate(lastInput)
               : undefined
           }
         />

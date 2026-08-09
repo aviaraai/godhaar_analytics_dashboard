@@ -1,10 +1,10 @@
-import { TriangleAlertIcon } from "lucide-react";
+import { DownloadIcon, TriangleAlertIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import type { CctvRequest, CctvStatus } from "@/lib/api";
-import { displayStatus } from "@/lib/cctv";
+import { displayStatus, isPlayableInBrowser } from "@/lib/cctv";
 import { formatCount, formatDuration, formatTimestamp } from "@/lib/format";
 import CctvVideo from "./CctvVideo";
 
@@ -220,6 +220,13 @@ function Videos({
 
   if (!url) return null;
 
+  // An uploaded MKV or AVI is stored and served under its own extension, and no
+  // browser will play either. The annotated clip is always MP4, so this only
+  // ever affects the original — and it has to be caught by extension, because
+  // handing it to `<video>` fails the same way an expired link does and would
+  // be reported as one.
+  const playable = isPlayableInBrowser(url);
+
   return (
     <div className="flex flex-col gap-2">
       {/* `source_video_url` can be null even on success, so the toggle only
@@ -244,7 +251,43 @@ function Videos({
           </Button>
         </div>
       )}
-      <CctvVideo url={url} onRefresh={onRefresh} />
+      {playable ? (
+        <CctvVideo url={url} onRefresh={onRefresh} />
+      ) : (
+        <DownloadOnly url={url} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * A container the browser cannot play. Not a failure — the clip analysed fine
+ * and the annotated version above plays — so this offers the file rather than
+ * an error.
+ *
+ * The link is presigned and short-lived, which is worth saying: an admin who
+ * leaves the tab open and comes back to it will find it dead, and knowing that
+ * is what sends them to Refresh instead of reporting a broken download.
+ */
+function DownloadOnly({ url }: { url: string }) {
+  return (
+    <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed px-4 py-10 text-center">
+      <DownloadIcon className="size-5 text-muted-foreground" />
+      <p className="max-w-md text-sm text-balance text-muted-foreground">
+        This is an MKV or AVI recording, which no browser will play. The
+        annotated version above plays normally.
+      </p>
+      <Button
+        variant="outline"
+        size="sm"
+        render={<a href={url} target="_blank" rel="noreferrer" />}
+      >
+        <DownloadIcon data-icon="inline-start" />
+        Download the original
+      </Button>
+      <p className="text-xs text-muted-foreground">
+        The link works for about fifteen minutes.
+      </p>
     </div>
   );
 }

@@ -1,12 +1,20 @@
-import { ImageOffIcon, LinkIcon } from "lucide-react";
+import { DownloadIcon, ImageOffIcon, LinkIcon, TriangleAlertIcon } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import type { DebugImage } from "@/lib/api";
+import { downloadPhoto, photoFileName, type PhotoOrigin } from "@/lib/download";
+import { cn } from "@/lib/utils";
 
 type DebugImagesProps = {
   images: DebugImage[];
   /** Described to screen readers; the photos themselves carry no captions. */
   label: string;
+  /**
+   * Which side of the comparison these are, which is what the saved files are
+   * named after: `uploaded_front_1`, `db_muzzle_2`.
+   */
+  origin: PhotoOrigin;
   /** Re-pulls the record, which is the only way to mint fresh links. */
   onRefresh: () => void;
   emptyHint?: string;
@@ -56,13 +64,12 @@ function bySlot(images: DebugImage[]): [string, DebugImage[]][] {
 export default function DebugImages({
   images,
   label,
+  origin,
   onRefresh,
   emptyHint,
 }: DebugImagesProps) {
   const [expired, setExpired] = useState<string[]>([]);
   const [zoomed, setZoomed] = useState<string | null>(null);
-
-  const urls = images.map((image) => image.url);
 
   if (images.length === 0) {
     return (
@@ -73,24 +80,39 @@ export default function DebugImages({
     );
   }
 
-  // `urls.includes` matters after a refresh: the enlarged photo is addressed by
-  // a URL that no longer exists, so the view falls back to the new strip
-  // instead of holding a link that is guaranteed to fail.
-  if (zoomed && urls.includes(zoomed) && !expired.includes(zoomed)) {
+  // Looked up rather than trusted after a refresh: the enlarged photo is
+  // addressed by a URL that no longer exists once the record is refetched, so
+  // the view falls back to the new strip instead of holding a dead link.
+  const enlarged =
+    zoomed && !expired.includes(zoomed)
+      ? images.find((image) => image.url === zoomed)
+      : undefined;
+
+  if (enlarged) {
     return (
-      <button
-        type="button"
-        onClick={() => setZoomed(null)}
-        aria-label="Shrink photo"
-        className="block w-full overflow-hidden rounded-lg bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
-      >
-        <img
-          src={zoomed}
-          alt={label}
-          onError={() => setExpired((seen) => [...seen, zoomed])}
-          className="max-h-[70vh] w-full object-contain"
+      <div className="flex flex-col gap-2">
+        <button
+          type="button"
+          onClick={() => setZoomed(null)}
+          aria-label="Shrink photo"
+          className="block w-full overflow-hidden rounded-lg bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+        >
+          <img
+            src={enlarged.url}
+            alt={label}
+            onError={() => setExpired((seen) => [...seen, enlarged.url])}
+            className="max-h-[70vh] w-full object-contain"
+          />
+        </button>
+        {/* Repeated here rather than left behind on the strip: enlarging a photo
+            is what someone does just before deciding to keep a copy of it. */}
+        <DownloadPhoto
+          image={enlarged}
+          origin={origin}
+          withLabel
+          className="w-fit font-mono"
         />
-      </button>
+      </div>
     );
   }
 
@@ -103,8 +125,9 @@ export default function DebugImages({
             {group.length > 1 && ` · ${group.length}`}
           </span>
           <Tiles
-            urls={group.map((image) => image.url)}
+            images={group}
             label={`${label} (${slot})`}
+            origin={origin}
             expired={expired}
             onExpired={(url) => setExpired((seen) => [...seen, url])}
             onZoom={setZoomed}
@@ -117,15 +140,17 @@ export default function DebugImages({
 }
 
 function Tiles({
-  urls,
+  images,
   label,
+  origin,
   expired,
   onExpired,
   onZoom,
   onRefresh,
 }: {
-  urls: string[];
+  images: DebugImage[];
   label: string;
+  origin: PhotoOrigin;
   expired: string[];
   onExpired: (url: string) => void;
   onZoom: (url: string) => void;
@@ -133,9 +158,16 @@ function Tiles({
 }) {
   return (
     <ul className="flex flex-wrap gap-2">
-      {urls.map((url) => (
-        <li key={url}>
-          {expired.includes(url) ? (
+      {images.map((image, index) => (
+        // Keyed by slot and sequence, never by URL: the same object is signed
+        // afresh on every read, so a URL key would remount every tile on each
+        // refetch. The index disambiguates the `unknown`/`0` fallback, which is
+        // the one pair that can repeat within a record.
+        <li
+          key={`${image.slot}:${image.sequence}:${index}`}
+          className="relative"
+        >
+          {expired.includes(image.url) ? (
             <div className="flex h-28 w-28 flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed px-2 text-center">
               <LinkIcon className="size-4 text-muted-foreground" />
               <span className="text-[11px] leading-tight text-muted-foreground">
@@ -146,24 +178,114 @@ function Tiles({
               </Button>
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={() => onZoom(url)}
-              aria-label={`Enlarge ${label}`}
-              className="block overflow-hidden rounded-lg bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
-            >
-              <img
-                src={url}
-                alt={label}
-                loading="lazy"
-                decoding="async"
-                onError={() => onExpired(url)}
-                className="h-28 w-28 object-cover transition-opacity hover:opacity-90"
+            <>
+              <button
+                type="button"
+                onClick={() => onZoom(image.url)}
+                aria-label={`Enlarge ${label}`}
+                className="block overflow-hidden rounded-lg bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+              >
+                <img
+                  src={image.url}
+                  alt={label}
+                  loading="lazy"
+                  decoding="async"
+                  onError={() => onExpired(image.url)}
+                  className="h-28 w-28 object-cover transition-opacity hover:opacity-90"
+                />
+              </button>
+              {/* A sibling of the tile rather than a child of it: the tile is
+                  already a button, and one cannot be nested inside another. */}
+              <DownloadPhoto
+                image={image}
+                origin={origin}
+                className="absolute right-1 bottom-1"
               />
-            </button>
+            </>
           )}
         </li>
       ))}
     </ul>
+  );
+}
+
+/**
+ * Saves one photo as `uploaded_front_1.jpg` / `db_muzzle_2.jpg`, so a folder of
+ * them still says which side of the comparison each came from once the fifteen
+ * minutes are up and the record is gone.
+ *
+ * The bytes are fetched and handed to the browser as a blob, because an
+ * `<a download>` pointed straight at storage.googleapis.com is cross-origin and
+ * the filename is dropped there — and the naming is the whole point.
+ *
+ * That fetch is the only thing here that can fail. Its message is kept and
+ * shown, because the two ways it fails want different things of the reader: an
+ * expired signature is fixed by refreshing the record, while a request storage
+ * refuses outright is a bucket CORS problem and no amount of refreshing will
+ * help. Pressing it again is allowed either way — the second attempt costs
+ * nothing and the first may simply have been a bad moment on the network.
+ */
+function DownloadPhoto({
+  image,
+  origin,
+  withLabel = false,
+  className,
+}: {
+  image: DebugImage;
+  origin: PhotoOrigin;
+  withLabel?: boolean;
+  className?: string;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const filename = photoFileName(image, origin);
+
+  async function run() {
+    setSaving(true);
+    setError(null);
+    try {
+      await downloadPhoto(image, origin);
+    } catch (failure) {
+      setError(
+        failure instanceof Error ? failure.message : "The download failed.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const description = error ?? `Download ${filename}`;
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size={withLabel ? "xs" : "icon-xs"}
+      disabled={saving}
+      onClick={() => void run()}
+      title={description}
+      aria-label={withLabel ? undefined : description}
+      className={cn(
+        // Legible over whatever the photo happens to be behind it.
+        "bg-background/85 backdrop-blur-xs",
+        error && "text-destructive",
+        className,
+      )}
+    >
+      {saving ? (
+        <Spinner
+          role="presentation"
+          aria-label={undefined}
+          className="size-3"
+          data-icon={withLabel ? "inline-start" : undefined}
+        />
+      ) : error ? (
+        <TriangleAlertIcon data-icon={withLabel ? "inline-start" : undefined} />
+      ) : (
+        <DownloadIcon data-icon={withLabel ? "inline-start" : undefined} />
+      )}
+      {withLabel && (error ? "Download failed" : filename)}
+    </Button>
   );
 }

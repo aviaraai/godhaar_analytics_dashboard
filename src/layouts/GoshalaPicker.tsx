@@ -56,7 +56,7 @@ export default function GoshalaPicker({
         <div className="flex flex-col gap-0.5">
           <h2 className="font-heading text-sm font-medium">Goshala</h2>
           <p className="text-xs text-muted-foreground">
-            Choose one, then run the camera analysis.
+            Choose one, then upload a clip recorded there.
           </p>
         </div>
         <Input
