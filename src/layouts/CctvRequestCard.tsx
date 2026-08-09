@@ -165,12 +165,12 @@ function Counts({ row }: { row: CctvRequest }) {
   return (
     <div className="flex flex-wrap gap-x-10 gap-y-4">
       <Count
-        label="Animals detected"
+        label="Total Cattle Observed"
         value={row.total_animals}
         hint="Every animal the model observed, clear or not — the peak count in any single frame."
       />
       <Count
-        label="Clearly tracked"
+        label="Total Cattle Focused"
         value={row.total_clear_animals}
         hint="The close-by animals seen clearly enough to follow as distinct individuals."
       />
