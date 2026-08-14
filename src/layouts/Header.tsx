@@ -1,5 +1,6 @@
 import { LogOutIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import godhaarLogo from "@/assets/godhaar-logo.png";
 
 type HeaderProps = {
   /** Omitted on the login screen, where there is nobody to sign out. */
@@ -42,6 +43,11 @@ export default function Header({
       )}
 
       <section className="mx-auto flex w-full max-w-6xl flex-col items-center gap-1 px-4 py-8 text-center">
+        <img
+          src={godhaarLogo}
+          alt="Godhaar"
+          className="mb-2 h-12 w-auto sm:h-14"
+        />
         <h1 className="font-heading text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
           {title}
         </h1>
