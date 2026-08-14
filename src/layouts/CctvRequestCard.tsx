@@ -154,12 +154,9 @@ function StatusBadge({ status }: { status: ReturnType<typeof displayStatus> }) {
 }
 
 /**
- * Both numbers, always, each labelled with what it measures — and deliberately
- * side by side rather than as a total and its subset. `total_clear_animals` is
- * *not* bounded by `total_animals`: they are measured differently, and a clip
- * panning across a herd legitimately tracks more distinct animals than were
- * ever in one frame at once. So there is no anomaly to flag when the second
- * exceeds the first, and no percentage that would mean anything.
+ * The single headline count. `row.total_clear_animals` still arrives on the
+ * wire (see lib/api.ts) but is deliberately not rendered anywhere — this is a
+ * display simplification only, not a contract change.
  */
 function Counts({ row }: { row: CctvRequest }) {
   return (
@@ -168,11 +165,6 @@ function Counts({ row }: { row: CctvRequest }) {
         label="Total Cattle Observed"
         value={row.total_animals}
         hint="Every animal the model observed, clear or not — the peak count in any single frame."
-      />
-      <Count
-        label="Total Cattle Focused"
-        value={row.total_clear_animals}
-        hint="The close-by animals seen clearly enough to follow as distinct individuals."
       />
     </div>
   );
