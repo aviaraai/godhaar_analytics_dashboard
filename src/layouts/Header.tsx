@@ -46,7 +46,7 @@ export default function Header({
         <img
           src={godhaarLogo}
           alt="Godhaar"
-          className="mb-2 h-12 w-auto sm:h-14"
+          className="mb-2 h-24 w-auto sm:h-28"
         />
         <h1 className="font-heading text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
           {title}
