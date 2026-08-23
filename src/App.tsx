@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { defaultSectionFor, useSession, type Section, type SignedIn } from "@/lib/session";
 import AppShell from "./layouts/AppShell";
+import CctvMonitoringBoard from "./layouts/CctvMonitoringBoard";
 import Dashboard from "./layouts/Dashboard";
 import DebugLayout from "./layouts/DebugLayout";
 import Header from "./layouts/Header";
@@ -41,10 +42,23 @@ function SignedInApp({ session }: { session: SignedIn }) {
     defaultSectionFor(session),
   );
 
+  // The CCTV monitoring board is a full-screen tool with its own sidebar and
+  // dark theme, not another `AppShell` panel — so it replaces the shell
+  // entirely while open, the same way `LoginScreen` does above, rather than
+  // becoming a third value inside `Section`.
+  const [cctvBoardOpen, setCctvBoardOpen] = useState(false);
+
+  if (cctvBoardOpen) {
+    return <CctvMonitoringBoard onBack={() => setCctvBoardOpen(false)} />;
+  }
+
   return (
     <AppShell session={session} section={section} onNavigate={setSection}>
       {section === "dashboard" && session.isAdmin ? (
-        <Dashboard key={session.email} />
+        <Dashboard
+          key={session.email}
+          onOpenCctvBoard={() => setCctvBoardOpen(true)}
+        />
       ) : section === "debug" && session.isDeveloper ? (
         <DebugLayout key={session.email} />
       ) : (

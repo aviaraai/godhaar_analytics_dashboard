@@ -1,4 +1,4 @@
-import { RotateCwIcon } from "lucide-react";
+import { BeefIcon, RotateCwIcon, UsersIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { AnalyticsTotals } from "@/lib/api";
 import { formatCount } from "@/lib/format";
@@ -50,11 +50,13 @@ export default function TotalsSummary({
       ) : (
         <>
           <Stat
+            icon={UsersIcon}
             label="Total Farmers"
             value={totals?.total_farmers}
             isPending={isPending}
           />
           <Stat
+            icon={BeefIcon}
             label="Total Animals"
             value={totals?.total_animals}
             isPending={isPending}
@@ -66,27 +68,33 @@ export default function TotalsSummary({
 }
 
 type StatProps = {
+  icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: number | undefined;
   isPending: boolean;
 };
 
-function Stat({ label, value, isPending }: StatProps) {
+function Stat({ icon: Icon, label, value, isPending }: StatProps) {
   return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-        {label}
+    <div className="flex items-center gap-3">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-100 text-green-700">
+        <Icon className="h-5 w-5" />
       </span>
-      <span
-        className="font-heading text-2xl font-semibold tabular-nums"
-        aria-busy={isPending || undefined}
-      >
-        {value === undefined ? (
-          <span className="text-muted-foreground">—</span>
-        ) : (
-          formatCount(value)
-        )}
-      </span>
+      <div className="flex flex-col gap-0.5">
+        <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+          {label}
+        </span>
+        <span
+          className="font-heading text-2xl font-semibold tabular-nums"
+          aria-busy={isPending || undefined}
+        >
+          {value === undefined ? (
+            <span className="text-muted-foreground">—</span>
+          ) : (
+            formatCount(value)
+          )}
+        </span>
+      </div>
     </div>
   );
 }

@@ -1,10 +1,12 @@
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
 import {
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
+import { VideoIcon } from "lucide-react";
 import AnalyticsPanel from "./AnalyticsPanel";
 import CctvPanel from "./CctvPanel";
 import LegacyPanel from "./LegacyPanel";
@@ -13,7 +15,12 @@ const CURRENT = "current";
 const LEGACY = "legacy";
 const CCTV = "cctv";
 
-export default function Dashboard() {
+type DashboardProps = {
+  /** Opens the full-screen live CCTV monitoring board, outside these tabs. */
+  onOpenCctvBoard: () => void;
+};
+
+export default function Dashboard({ onOpenCctvBoard }: DashboardProps) {
   const [tab, setTab] = useState<string>(CURRENT);
 
   // The two datasets are not two views of the same numbers — different columns,
@@ -42,11 +49,18 @@ export default function Dashboard() {
 
   return (
     <Tabs value={tab} onValueChange={(value) => setTab(String(value))}>
-      <TabsList>
-        <TabsTrigger value={CURRENT}>Current data</TabsTrigger>
-        <TabsTrigger value={LEGACY}>Legacy data</TabsTrigger>
-        <TabsTrigger value={CCTV}>CCTV</TabsTrigger>
-      </TabsList>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <TabsList>
+          <TabsTrigger value={CURRENT}>Current data</TabsTrigger>
+          <TabsTrigger value={LEGACY}>Legacy data</TabsTrigger>
+          <TabsTrigger value={CCTV}>CCTV</TabsTrigger>
+        </TabsList>
+
+        <Button type="button" variant="outline" onClick={onOpenCctvBoard}>
+          <VideoIcon data-icon="inline-start" />
+          CCTV Monitoring
+        </Button>
+      </div>
 
       <TabsContent
         value={CURRENT}

@@ -110,16 +110,18 @@ export default function LegacyPanel() {
         busy={query.isFetching}
       />
 
-      <section className="rounded-xl border bg-card">
-        <div className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
-          <h2 className="font-heading text-sm font-medium">Results</h2>
+      <section className="rounded-xl border border-[#E1E8D9] bg-white dark:border-[#232B1E] dark:bg-[#161D13]">
+        <div className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-b border-[#E1E8D9] px-4 py-3 dark:border-[#232B1E]">
+          <h2 className="font-heading text-sm font-medium text-[#1B2A1E] dark:text-[#EAF0E4]">
+            Results
+          </h2>
           {query.isFetching && (
             <LoadingSpinner label="Fetching legacy records…" />
           )}
         </div>
         <div className="px-4 pb-4">
           {query.data === undefined && query.isFetching ? (
-            <p className="px-2 py-12 text-center text-sm text-muted-foreground">
+            <p className="px-2 py-12 text-center text-sm text-[#5B6B58] dark:text-[#93A08C]">
               Loading legacy records…
             </p>
           ) : (

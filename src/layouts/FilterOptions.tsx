@@ -131,7 +131,11 @@ export default function FilterOptions({
           <Trash2Icon data-icon="inline-start" />
           Clear cached data
         </Button>
-        <Button type="submit" disabled={busy}>
+        <Button
+          type="submit"
+          disabled={busy}
+          className="bg-green-700 text-white hover:bg-green-800"
+        >
           <SearchIcon data-icon="inline-start" />
           {busy ? "Loading…" : "Load data"}
         </Button>
