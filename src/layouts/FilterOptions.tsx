@@ -9,7 +9,7 @@ import type {
   Mandal,
   State,
 } from "@/lib/types";
-import { SearchIcon, Trash2Icon } from "lucide-react";
+import { FilterIcon, RotateCcwIcon, SearchIcon, Trash2Icon } from "lucide-react";
 import LocationField from "./LocationField";
 
 type FilterOptionsProps = {
@@ -17,9 +17,10 @@ type FilterOptionsProps = {
   onChange: (values: FilterFormValues) => void;
   onSearch: () => void;
   onClearCache: () => void;
-  /** A fetch is in flight — the fields stay live, the actions do not. */
   busy: boolean;
 };
+
+const EMPTY: FilterFormValues = {};
 
 export default function FilterOptions({
   values,
@@ -35,25 +36,22 @@ export default function FilterOptions({
       ? getMandals(values.state, values.district)
       : [];
 
-  // Look the selection back up out of the same arrays we hand to the combobox,
-  // so the controlled value is the very object the list rendered.
   const selectedState = states.find((s) => s.id === values.state) ?? null;
   const selectedDistrict = districts.find((d) => d.id === values.district) ?? null;
   const selectedMandal = mandals.find((m) => m.id === values.mandal) ?? null;
   const selectedBreed =
     BREED_OPTIONS.find((b) => b.id === values.breed) ?? null;
 
-  // Narrowing a parent drops whatever no longer sits underneath it.
   const setState = (next: State | null) =>
     onChange({ ...values, state: next?.id, district: undefined, mandal: undefined });
   const setDistrict = (next: District | null) =>
     onChange({ ...values, district: next?.id, mandal: undefined });
   const setMandal = (next: Mandal | null) =>
     onChange({ ...values, mandal: next?.id });
-  // Independent of the place fields: a breed is not owned by a mandal, so
-  // nothing above it clears it and it clears nothing below.
   const setBreed = (next: LocationOption | null) =>
     onChange({ ...values, breed: next?.id });
+
+  const hasAnyFilter = Object.values(values).some((v) => v !== undefined && v !== "");
 
   return (
     <form
@@ -61,9 +59,29 @@ export default function FilterOptions({
         event.preventDefault();
         if (!busy) onSearch();
       }}
-      className="flex flex-col gap-4 rounded-xl border bg-card p-4"
+      className="flex flex-col gap-4 rounded-2xl border border-green-100 bg-gradient-to-br from-green-50/50 via-card to-card p-5 shadow-sm"
     >
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="flex items-center justify-between">
+        <span className="flex items-center gap-1.5 text-sm font-semibold text-green-800/80">
+          <FilterIcon className="size-4 text-green-600" />
+          Filters
+        </span>
+        {hasAnyFilter && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => onChange(EMPTY)}
+            disabled={busy}
+            className="rounded-full text-muted-foreground hover:bg-green-50 hover:text-green-800"
+          >
+            <RotateCcwIcon data-icon="inline-start" />
+            Reset all
+          </Button>
+        )}
+      </div>
+
+      <div className="grid gap-4 rounded-xl border bg-white/60 p-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <LocationField
           id="filter-state"
           label="State"
@@ -127,6 +145,7 @@ export default function FilterOptions({
           variant="outline"
           onClick={onClearCache}
           disabled={busy}
+          className="rounded-full border-green-200 text-green-800 hover:bg-green-50 hover:text-green-900"
         >
           <Trash2Icon data-icon="inline-start" />
           Clear cached data
@@ -134,7 +153,7 @@ export default function FilterOptions({
         <Button
           type="submit"
           disabled={busy}
-          className="bg-green-700 text-white hover:bg-green-800"
+          className="rounded-full bg-green-700 text-white shadow-sm hover:bg-green-800"
         >
           <SearchIcon data-icon="inline-start" />
           {busy ? "Loading…" : "Load data"}
@@ -173,6 +192,7 @@ function DateField({
         min={min}
         max={max}
         onChange={(event) => onValueChange(event.target.value || undefined)}
+        className="rounded-full border-green-200 focus-visible:ring-green-300"
       />
     </div>
   );

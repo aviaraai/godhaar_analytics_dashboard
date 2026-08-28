@@ -13,6 +13,7 @@ import {
   type RegistrationViewFilters,
 } from "@/lib/debug";
 import { formatCount } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import DebugBreakdown from "./DebugBreakdown";
 import DebugDateRange from "./DebugDateRange";
 import DebugErrorPanel from "./DebugErrorPanel";
@@ -25,12 +26,6 @@ type DebugRegistrationsPanelProps = {
   onNavigateToAnimal: (animal: string) => void;
 };
 
-/**
- * Registrations the model refused, and the two breakdowns that answer why:
- * a spike in one `error_code`, or in one device model, is the signal. Both
- * breakdowns double as the filter, so following a spike to the records behind
- * it is a single click.
- */
 export default function DebugRegistrationsPanel({
   onNavigateToAnimal,
 }: DebugRegistrationsPanelProps) {
@@ -40,20 +35,12 @@ export default function DebugRegistrationsPanel({
   const query = useQuery({
     queryKey: [REGISTRATIONS_KEY],
     queryFn: getDebugRegistrations,
-    // The rows carry presigned URLs that die after fifteen minutes, so a
-    // cached listing is not allowed to outlive its own images.
     staleTime: 60 * 1000,
     gcTime: 10 * 60 * 1000,
   });
 
   const rows = query.data ?? [];
 
-  // Counted over the whole listing rather than the filtered view: picking one
-  // code should not redraw the chart that told you to pick it.
-  //
-  // The date range is the exception, and deliberately so — narrowing to the day
-  // a spike happened is asking *which code spiked then*, so the breakdowns have
-  // to answer for that window rather than for all time.
   const dated = rows.filter((row) =>
     withinDateRange(row.created_at, filters.from, filters.to),
   );
@@ -73,18 +60,17 @@ export default function DebugRegistrationsPanel({
 
   return (
     <>
-      <section className="rounded-xl border bg-card p-4">
-        <div className="flex flex-col gap-2">
-          <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            Date range
-          </span>
-          <DebugDateRange
-            from={filters.from}
-            to={filters.to}
-            idPrefix="registration-filter"
-            onChange={({ from, to }) => setFilters({ ...filters, from, to })}
-          />
-        </div>
+      <section className="flex flex-col gap-2 rounded-2xl border bg-gradient-to-br from-green-50/50 via-card to-card p-4 shadow-sm">
+        <span className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-green-800/80 uppercase">
+          <span className="h-3 w-1 rounded-full bg-green-500" />
+          Date range
+        </span>
+        <DebugDateRange
+          from={filters.from}
+          to={filters.to}
+          idPrefix="registration-filter"
+          onChange={({ from, to }) => setFilters({ ...filters, from, to })}
+        />
       </section>
 
       <div className="flex flex-wrap gap-4">
@@ -108,7 +94,7 @@ export default function DebugRegistrationsPanel({
         />
       </div>
 
-      <div className="flex min-h-8 flex-wrap items-center justify-between gap-3">
+      <div className="flex min-h-8 flex-wrap items-center justify-between gap-3 rounded-2xl border bg-white/60 px-4 py-3 shadow-sm">
         <p className="text-sm text-muted-foreground">
           {query.isPending
             ? "Loading registrations…"
@@ -124,6 +110,7 @@ export default function DebugRegistrationsPanel({
               variant="ghost"
               size="sm"
               onClick={() => setFilters(ALL_REGISTRATIONS)}
+              className="rounded-full text-muted-foreground hover:bg-green-50 hover:text-green-800"
             >
               Clear filters
             </Button>
@@ -134,19 +121,23 @@ export default function DebugRegistrationsPanel({
             size="sm"
             onClick={() => void query.refetch()}
             disabled={query.isFetching}
+            className="rounded-full border-green-200 text-green-800 hover:bg-green-50 hover:text-green-900"
           >
-            <RotateCwIcon data-icon="inline-start" />
+            <RotateCwIcon
+              data-icon="inline-start"
+              className={cn(query.isFetching && "animate-spin")}
+            />
             {query.isFetching ? "Refreshing…" : "Refresh"}
           </Button>
         </div>
       </div>
 
       {query.isPending ? (
-        <p className="rounded-xl border bg-card px-4 py-12 text-center text-sm text-muted-foreground">
+        <p className="rounded-2xl border bg-card px-4 py-12 text-center text-sm text-muted-foreground shadow-sm">
           Loading registrations…
         </p>
       ) : visible.length === 0 ? (
-        <p className="rounded-xl border bg-card px-4 py-12 text-center text-sm text-muted-foreground">
+        <p className="rounded-2xl border bg-card px-4 py-12 text-center text-sm text-muted-foreground shadow-sm">
           {rows.length === 0
             ? "No registrations have been refused yet."
             : "No registrations match these filters."}

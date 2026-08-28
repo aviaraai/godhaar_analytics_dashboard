@@ -1,99 +1,117 @@
-import { BeefIcon, RotateCwIcon, UsersIcon } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { TrendingUpIcon, UsersIcon } from "lucide-react";
 import type { AnalyticsTotals } from "@/lib/api";
-import { formatCount } from "@/lib/format";
+import LoadingSpinner from "./LoadingSpinner";
+import godhaarCount from "@/assets/godhaar_count.png";
+import totalFarmer from "@/assets/total_farmer.png";
 
 type TotalsSummaryProps = {
   totals: AnalyticsTotals | undefined;
   isPending: boolean;
   isError: boolean;
   onRetry: () => void;
-  title?: string;
-  description?: string;
 };
 
-/**
- * Whole-dataset counts. These never respond to the filters, which is why the
- * "All records" label is not decoration: `DashboardTable` has its own Totals
- * row in the footer and that one *is* filtered. Two different numbers under
- * the same words, with nothing to distinguish them, is a support ticket.
- *
- * The legacy tab reuses this with its own wording. Its numbers arrive by a
- * different route — summed on the client rather than counted by the backend —
- * but they mean exactly the same thing, so they belong in the same strip.
- */
 export default function TotalsSummary({
   totals,
   isPending,
   isError,
   onRetry,
-  title = "All records",
-  description = "Whole dataset — no filters applied.",
 }: TotalsSummaryProps) {
   return (
-    <section className="flex flex-wrap items-center gap-x-10 gap-y-4 rounded-xl border bg-card px-4 py-4">
-      <div className="mr-auto flex flex-col gap-0.5">
-        <h2 className="font-heading text-sm font-medium">{title}</h2>
-        <p className="text-xs text-muted-foreground">{description}</p>
-      </div>
-
-      {isError ? (
-        <div className="flex flex-wrap items-center gap-3">
-          <p className="text-sm text-muted-foreground">
-            Totals are unavailable right now.
-          </p>
-          <Button type="button" variant="outline" size="sm" onClick={onRetry}>
-            <RotateCwIcon data-icon="inline-start" />
-            Retry
-          </Button>
-        </div>
-      ) : (
-        <>
-          <Stat
-            icon={UsersIcon}
-            label="Total Farmers"
-            value={totals?.total_farmers}
-            isPending={isPending}
-          />
-          <Stat
-            icon={BeefIcon}
-            label="Total Animals"
-            value={totals?.total_animals}
-            isPending={isPending}
-          />
-        </>
-      )}
-    </section>
+    <div className="grid gap-4 sm:grid-cols-2">
+      <StatCard
+        icon={<UsersIcon className="h-6 w-6" />}
+        label="Total farmers"
+        value={totals?.total_farmers}
+        hint="Registered farmers"
+        isPending={isPending}
+        isError={isError}
+        onRetry={onRetry}
+        image={totalFarmer}
+      />
+      <StatCard
+        icon={<UsersIcon className="h-6 w-6" />}
+        label="Total animals"
+        value={totals?.total_animals}
+        hint="Animals registered"
+        isPending={isPending}
+        isError={isError}
+        onRetry={onRetry}
+        image={godhaarCount}
+      />
+    </div>
   );
 }
 
-type StatProps = {
-  icon: React.ComponentType<{ className?: string }>;
+type StatCardProps = {
+  icon: React.ReactNode;
   label: string;
   value: number | undefined;
+  hint: string;
   isPending: boolean;
+  isError: boolean;
+  onRetry: () => void;
+  /** Background photo, right-anchored, fading into the card's own gradient. */
+  image?: string;
 };
 
-function Stat({ icon: Icon, label, value, isPending }: StatProps) {
+function StatCard({
+  icon,
+  label,
+  value,
+  hint,
+  isPending,
+  isError,
+  onRetry,
+  image,
+}: StatCardProps) {
   return (
-    <div className="flex items-center gap-3">
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-100 text-green-700">
-        <Icon className="h-5 w-5" />
-      </span>
-      <div className="flex flex-col gap-0.5">
-        <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-          {label}
+    <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-green-50 to-white">
+      {image && (
+        <img
+          src={image}
+          alt=""
+          aria-hidden="true"
+          className="pointer-events-none absolute right-0 top-0 h-full w-auto max-w-[65%] object-contain object-right"
+          style={{
+            maskImage:
+              "linear-gradient(to right, transparent 0%, black 35%)",
+            WebkitMaskImage:
+              "linear-gradient(to right, transparent 0%, black 35%)",
+          }}
+        />
+      )}
+
+      <div className="relative flex items-start gap-4 p-6">
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-green-100 text-green-700">
+          {icon}
         </span>
-        <span
-          className="font-heading text-2xl font-semibold tabular-nums"
-          aria-busy={isPending || undefined}
-        >
-          {value === undefined ? (
-            <span className="text-muted-foreground">—</span>
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            {label}
+          </p>
+          {isPending ? (
+            <div className="mt-1">
+              <LoadingSpinner label="Loading" />
+            </div>
+          ) : isError ? (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="mt-1 text-sm text-destructive underline"
+            >
+              Failed to load — retry
+            </button>
           ) : (
-            formatCount(value)
+            <p className="font-heading text-4xl font-bold text-green-900">
+              {value ?? "—"}
+            </p>
           )}
-        </span>
+          <p className="mt-1 flex items-center gap-1 text-xs text-green-700">
+            <TrendingUpIcon className="h-3.5 w-3.5" />
+            {hint}
+          </p>
+        </div>
       </div>
     </div>
   );

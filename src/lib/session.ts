@@ -35,7 +35,7 @@ export type SignedIn = Extract<SessionState, { status: "signed-in" }>;
  * The two screens the app can show a signed-in account — chosen by internal
  * state, never by URL. There is no address bar involvement in getting here.
  */
-export type Section = "dashboard" | "debug";
+export type Section = "dashboard" | "debug" | "cctv";
 
 /**
  * Where this account lands when it has not asked for anywhere in particular.

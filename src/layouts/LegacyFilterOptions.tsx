@@ -114,7 +114,11 @@ export default function LegacyFilterOptions({
           <Trash2Icon data-icon="inline-start" />
           Clear filters
         </Button>
-        <Button type="submit" disabled={busy}>
+        <Button
+          type="submit"
+          disabled={busy}
+          className="bg-green-700 text-white shadow-sm transition-all hover:bg-green-800 hover:shadow-md active:bg-green-900 disabled:bg-green-700/60 disabled:shadow-none"
+        >
           <SearchIcon data-icon="inline-start" />
           {busy ? "Loading…" : "Load data"}
         </Button>

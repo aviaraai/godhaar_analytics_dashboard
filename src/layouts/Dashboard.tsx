@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import {
   Tabs,
@@ -6,81 +7,130 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { VideoIcon } from "lucide-react";
+import { getTotals, type AnalyticsTotals } from "@/lib/api";
+import { Trash2Icon, UploadCloudIcon } from "lucide-react";
 import AnalyticsPanel from "./AnalyticsPanel";
 import CctvPanel from "./CctvPanel";
 import LegacyPanel from "./LegacyPanel";
+import TotalsSummary from "./TotalsSummary";
+
+const TOTALS_KEY = "analytics-totals";
 
 const CURRENT = "current";
 const LEGACY = "legacy";
 const CCTV = "cctv";
 
-type DashboardProps = {
-  /** Opens the full-screen live CCTV monitoring board, outside these tabs. */
-  onOpenCctvBoard: () => void;
-};
-
-export default function Dashboard({ onOpenCctvBoard }: DashboardProps) {
+export default function Dashboard() {
+  const queryClient = useQueryClient();
   const [tab, setTab] = useState<string>(CURRENT);
 
-  // The two datasets are not two views of the same numbers — different columns,
-  // different filters, different backing tables — so they get tabs rather than a
-  // toggle or a second table stacked below. Both panels stay mounted once shown
-  // (`keepMounted`), because losing the filter selections every time someone
-  // glances at the other tab is the one thing that would make tabs annoying.
-  //
-  // Tabs rather than routes for exactly that reason: these are two views of one
-  // screen whose value is in the state they hold, and an address per view would
-  // trade that away for a link nobody has asked for.
-  //
-  // Legacy is mounted only after its tab is first opened, though: mounting it up
-  // front would fire its totals query for every admin who never looks at it.
-  const [legacyOpened, setLegacyOpened] = useState(false);
-  if (tab === LEGACY && !legacyOpened) {
-    setLegacyOpened(true);
-  }
+  // Totals live here, above the tabs, because they describe the whole
+  // dataset rather than whichever tab is open. Typed off `getTotals` itself
+  // (`AnalyticsTotals`, from lib/api.ts) rather than a type declared in this
+  // file or in TotalsSummary — so if the backend contract ever changes,
+  // TypeScript fails the build here instead of the UI quietly rendering "—".
+  const totals = useQuery<AnalyticsTotals>({
+    queryKey: [TOTALS_KEY],
+    queryFn: getTotals,
+    staleTime: 15 * 60 * 1000,
+  });
 
-  // Same treatment, and for a stronger reason: CCTV fires two queries on mount,
-  // one of which returns presigned photo URLs that start expiring immediately.
+  const [legacyOpened, setLegacyOpened] = useState(false);
+  if (tab === LEGACY && !legacyOpened) setLegacyOpened(true);
+
   const [cctvOpened, setCctvOpened] = useState(false);
-  if (tab === CCTV && !cctvOpened) {
-    setCctvOpened(true);
-  }
+  if (tab === CCTV && !cctvOpened) setCctvOpened(true);
 
   return (
-    <Tabs value={tab} onValueChange={(value) => setTab(String(value))}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <TabsList>
-          <TabsTrigger value={CURRENT}>Current data</TabsTrigger>
-          <TabsTrigger value={LEGACY}>Legacy data</TabsTrigger>
-          <TabsTrigger value={CCTV}>CCTV</TabsTrigger>
-        </TabsList>
-
-        <Button type="button" variant="outline" onClick={onOpenCctvBoard}>
-          <VideoIcon data-icon="inline-start" />
-          CCTV Monitoring
-        </Button>
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-2">
+          <span className="mt-1 h-6 w-1 shrink-0 rounded-full bg-green-600" />
+          <div>
+            <h1 className="font-heading text-2xl font-bold text-foreground">
+              All records
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Whole dataset — no filters applied.
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() =>
+              queryClient.removeQueries({ queryKey: [TOTALS_KEY] })
+            }
+          >
+            <Trash2Icon data-icon="inline-start" />
+            Clear cache
+          </Button>
+          <Button
+            type="button"
+            onClick={() => void totals.refetch()}
+            disabled={totals.isFetching}
+            className="bg-green-700 text-white hover:bg-green-800"
+          >
+            <UploadCloudIcon data-icon="inline-start" />
+            {totals.isFetching ? "Loading…" : "Load data"}
+          </Button>
+        </div>
       </div>
 
-      <TabsContent
-        value={CURRENT}
-        keepMounted
-        className="flex flex-col gap-6 pt-2"
-      >
-        <AnalyticsPanel />
-      </TabsContent>
+      <TotalsSummary
+        totals={totals.data}
+        isPending={totals.isPending}
+        isError={totals.isError}
+        onRetry={() => void totals.refetch()}
+      />
 
-      <TabsContent
-        value={LEGACY}
-        keepMounted
-        className="flex flex-col gap-6 pt-2"
-      >
-        {legacyOpened && <LegacyPanel />}
-      </TabsContent>
+      <Tabs value={tab} onValueChange={(value) => setTab(String(value))}>
+        <TabsList className="rounded-full bg-muted p-1">
+          <TabsTrigger
+            value={CURRENT}
+            className="rounded-full px-4 data-active:bg-green-700 data-active:text-white dark:data-active:bg-green-700 dark:data-active:text-white dark:data-active:border-transparent"
+          >
+            Current data
+          </TabsTrigger>
+          <TabsTrigger
+            value={LEGACY}
+            className="rounded-full px-4 data-active:bg-green-700 data-active:text-white dark:data-active:bg-green-700 dark:data-active:text-white dark:data-active:border-transparent"
+          >
+            Legacy data
+          </TabsTrigger>
+          <TabsTrigger
+            value={CCTV}
+            className="rounded-full px-4 data-active:bg-green-700 data-active:text-white dark:data-active:bg-green-700 dark:data-active:text-white dark:data-active:border-transparent"
+          >
+            CCTV
+          </TabsTrigger>
+        </TabsList>
 
-      <TabsContent value={CCTV} keepMounted className="flex flex-col gap-6 pt-2">
-        {cctvOpened && <CctvPanel />}
-      </TabsContent>
-    </Tabs>
+        <TabsContent
+          value={CURRENT}
+          keepMounted
+          className="flex flex-col gap-6 pt-4"
+        >
+          <AnalyticsPanel />
+        </TabsContent>
+
+        <TabsContent
+          value={LEGACY}
+          keepMounted
+          className="flex flex-col gap-6 pt-4"
+        >
+          {legacyOpened && <LegacyPanel />}
+        </TabsContent>
+
+        <TabsContent
+          value={CCTV}
+          keepMounted
+          className="flex flex-col gap-6 pt-4"
+        >
+          {cctvOpened && <CctvPanel />}
+        </TabsContent>
+      </Tabs>
+    </div>
   );
 }

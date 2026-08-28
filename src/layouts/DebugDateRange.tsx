@@ -6,19 +6,9 @@ type DebugDateRangeProps = {
   from: string;
   to: string;
   onChange: (next: { from: string; to: string }) => void;
-  /** Distinguishes the input ids when both screens are in one document. */
   idPrefix: string;
 };
 
-/**
- * A range rather than the single day the contract's mock sketches: one day is
- * expressible by putting the same date in both, and "the week the new app build
- * went out" is not expressible any other way. Both bounds are inclusive, which
- * is what a reader picking two dates off a calendar means by them.
- *
- * Each bound constrains the other, so the pair cannot be dragged into an
- * impossible order and then quietly return nothing.
- */
 export default function DebugDateRange({
   from,
   to,
@@ -26,7 +16,7 @@ export default function DebugDateRange({
   idPrefix,
 }: DebugDateRangeProps) {
   return (
-    <div className="flex flex-wrap items-end gap-3">
+    <div className="flex flex-wrap items-end gap-2">
       <Field
         id={`${idPrefix}-from`}
         label="From date"
@@ -47,6 +37,7 @@ export default function DebugDateRange({
           variant="ghost"
           size="sm"
           onClick={() => onChange({ from: "", to: "" })}
+          className="rounded-full text-muted-foreground hover:bg-green-50 hover:text-green-800"
         >
           <XIcon data-icon="inline-start" />
           Clear dates
@@ -73,7 +64,10 @@ function Field({
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="text-xs font-medium text-muted-foreground">
+      <label
+        htmlFor={id}
+        className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase"
+      >
         {label}
       </label>
       <Input
@@ -83,7 +77,7 @@ function Field({
         min={min}
         max={max}
         onChange={(event) => onValueChange(event.target.value)}
-        className="h-8 w-40"
+        className="h-8 w-40 rounded-full border-green-200 bg-white/70 focus-visible:ring-green-300"
       />
     </div>
   );

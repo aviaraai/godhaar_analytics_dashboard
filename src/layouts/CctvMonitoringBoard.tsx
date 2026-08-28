@@ -21,20 +21,35 @@ import {
   VideoIcon,
   XIcon,
 } from "lucide-react";
+import { useCctvBoardData } from "./useCctvBoardData";
 
 /* ------------------------------------------------------------------ */
-/*  Types — wire these up to the real API once endpoints exist.        */
+/*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
 export type CctvCamera = {
+  /** The goshala's public_id — the only addressable unit the API has. */
   id: string;
   name: string;
-  /** Raw feed URL. Left undefined until the backend hands one over. */
+  /**
+   * There is no raw live feed on the backend today — `getGoshalas` and
+   * `analyseGoshala` never return one — so this is always undefined and the
+   * board renders no "live feed" pane. Left on the type in case a real feed
+   * endpoint shows up later.
+   */
   streamUrl?: string;
-  /** Feed with the cattle-detection boxes drawn on it. */
+  /**
+   * The annotated clip from the most recent *successful* analysis of this
+   * goshala. Presigned and expires roughly 15 minutes after the request that
+   * fetched it, same as everywhere else this URL shape is used.
+   */
   annotatedStreamUrl?: string;
-  /** Latest detection count for this camera. `undefined` renders as "—". */
+  /** Count from that same run. `undefined` renders as "—". */
   cattleCount?: number;
+  /** When that run completed, so a viewer can judge how stale the clip is. */
+  lastAnalysedAt?: string | null;
+  /** A fresh pull (`POST /cctv/analyse`) is in flight for this goshala. */
+  isPulling?: boolean;
 };
 
 export type CctvGroup = {
@@ -43,11 +58,13 @@ export type CctvGroup = {
   cameras: CctvCamera[];
 };
 
-/** One row on the board: original feed + annotated feed + count panel. */
+/** One row on the board: annotated feed + count panel. */
 type Slot = CctvCamera | null;
 
-/** Which pane (if any) is currently blown up to fill the card. */
-type FocusedPane = "live" | "annotated" | null;
+/** Which pane (if any) is currently blown up to fill the card. Only one pane
+ * exists today (annotated), but this stays a union so a future live pane
+ * slots in without reshaping the focus model. */
+type FocusedPane = "annotated" | null;
 
 /** The "only 2 screens fit on one page" rule, in one place. */
 const SLOTS_PER_PAGE = 2;
@@ -111,14 +128,22 @@ function FingerprintMark({ className }: { className?: string }) {
 type CctvMonitoringBoardProps = {
   /** Returns to the main dashboard shell. */
   onBack: () => void;
-  /** Camera tree from the backend. Defaults to empty until it's wired up. */
+  /**
+   * Camera tree, keyed by goshala. Optional — when omitted the board fetches
+   * it itself via `useCctvBoardData` (goshalas + their latest analysis).
+   * Passing this explicitly is mainly useful for tests/storybook.
+   */
   groups?: CctvGroup[];
 };
 
 export default function CctvMonitoringBoard({
   onBack,
-  groups = [],
+  groups: groupsProp,
 }: CctvMonitoringBoardProps) {
+  const board = useCctvBoardData();
+  const groups = groupsProp ?? board.groups;
+  const usingLiveData = groupsProp === undefined;
+
   const [pages, setPages] = useState<Slot[][]>([[null, null]]);
   const [pinnedCameraId, setPinnedCameraId] = useState<string | null>(null);
   const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -143,6 +168,31 @@ export default function CctvMonitoringBoard({
       setPinnedCameraId(null);
     }
   }, [pages, pinnedCameraId]);
+
+  // A camera placed on the board is a snapshot of that goshala's last known
+  // state. When live data refreshes underneath it (a pull completes, a new
+  // count arrives), keep the placed slots in sync rather than freezing them
+  // at whatever they looked like the moment they were dropped in.
+  useEffect(() => {
+    if (!usingLiveData) return;
+    const byId = new Map(groups.flatMap((g) => g.cameras).map((c) => [c.id, c]));
+    setPages((prev) => {
+      let changed = false;
+      const next = prev.map((page) =>
+        page.map((slot) => {
+          if (!slot) return slot;
+          const fresh = byId.get(slot.id);
+          if (!fresh || fresh === slot) return slot;
+          changed = true;
+          return fresh;
+        }),
+      );
+      return changed ? next : prev;
+    });
+    // Only `groups` should retrigger this — `usingLiveData` is fixed for the
+    // component's lifetime and `pages` is what's being written here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groups, usingLiveData]);
 
   // Cameras already on the board, so the sidebar can grey them out instead
   // of letting someone place the same feed in two slots.
@@ -224,6 +274,10 @@ export default function CctvMonitoringBoard({
     });
   }
 
+  function pullClip(camera: CctvCamera) {
+    board.pullClip(camera.id);
+  }
+
   return (
     <div className="flex h-screen w-full overflow-hidden bg-[#F4F7EF] text-[#1B2A1E] transition-colors dark:bg-[#10160E] dark:text-[#EAF0E4]">
       <CameraTree
@@ -232,11 +286,31 @@ export default function CctvMonitoringBoard({
         pinnedCameraId={pinnedCameraId}
         onSelect={addCamera}
         onBack={onBack}
+        isLoading={usingLiveData && board.isLoading}
+        isError={usingLiveData && board.isError}
       />
 
       <div className="flex-1 snap-y snap-mandatory overflow-y-auto scroll-smooth">
-        {pinnedCamera ? (
-          <PinnedCameraView camera={pinnedCamera} onBack={() => setPinnedCameraId(null)} />
+        {usingLiveData && board.isLoading ? (
+          <div className="flex h-full items-center justify-center gap-2 text-sm text-[#5B6B58] dark:text-[#93A08C]">
+            <FingerprintMark className="h-4 w-4 animate-pulse" />
+            Loading goshalas…
+          </div>
+        ) : usingLiveData && board.isError ? (
+          <div className="flex h-full flex-col items-center justify-center gap-1 text-center text-sm text-[#C97A3D] dark:text-[#E0954D]">
+            <p>Could not load the goshala list.</p>
+            {board.error?.message && (
+              <p className="text-xs text-[#9AA593] dark:text-[#5B6B58]">
+                {board.error.message}
+              </p>
+            )}
+          </div>
+        ) : pinnedCamera ? (
+          <PinnedCameraView
+            camera={pinnedCamera}
+            onBack={() => setPinnedCameraId(null)}
+            onPullClip={() => pullClip(pinnedCamera)}
+          />
         ) : (
           <>
             {pages.map((page, pageIndex) => (
@@ -249,6 +323,7 @@ export default function CctvMonitoringBoard({
                 onClearSlot={(slotIndex) => clearSlot(pageIndex, slotIndex)}
                 pinnedCameraId={pinnedCameraId}
                 onTogglePin={togglePin}
+                onPullClip={pullClip}
               />
             ))}
 
@@ -277,17 +352,38 @@ function CameraTree({
   pinnedCameraId,
   onSelect,
   onBack,
+  isLoading,
+  isError,
 }: {
   groups: CctvGroup[];
   placedIds: Set<string>;
   pinnedCameraId: string | null;
   onSelect: (camera: CctvCamera) => void;
   onBack: () => void;
+  isLoading: boolean;
+  isError: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [openGroups, setOpenGroups] = useState<Set<string>>(
     () => new Set(groups.map((g) => g.id)),
   );
+
+  // Newly-arrived groups (e.g. once the live fetch resolves) default to open,
+  // same as the initial render — otherwise a group fetched in after mount
+  // would start collapsed with no way to tell it apart from an empty one.
+  useEffect(() => {
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      let changed = false;
+      for (const group of groups) {
+        if (!next.has(group.id)) {
+          next.add(group.id);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [groups]);
 
   function toggleGroup(id: string) {
     setOpenGroups((prev) => {
@@ -341,7 +437,17 @@ function CameraTree({
       </div>
 
       <div className="flex-1 overflow-y-auto px-2 pb-4">
-        {groups.length === 0 ? (
+        {isLoading ? (
+          <div className="flex flex-col items-center gap-2 px-4 py-10 text-center text-[#9AA593] dark:text-[#5B6B58]">
+            <FingerprintMark className="h-6 w-6 animate-pulse" />
+            <p className="text-xs">Loading…</p>
+          </div>
+        ) : isError ? (
+          <div className="flex flex-col items-center gap-2 px-4 py-10 text-center text-[#C97A3D] dark:text-[#E0954D]">
+            <FingerprintMark className="h-6 w-6" />
+            <p className="text-xs">Could not load cameras.</p>
+          </div>
+        ) : groups.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-4 py-10 text-center text-[#9AA593] dark:text-[#5B6B58]">
             <FingerprintMark className="h-6 w-6" />
             <p className="text-xs">No cameras yet.</p>
@@ -421,6 +527,7 @@ function CctvPageSection({
   onClearSlot,
   pinnedCameraId,
   onTogglePin,
+  onPullClip,
 }: {
   pageNumber: number;
   slots: Slot[];
@@ -429,6 +536,7 @@ function CctvPageSection({
   onClearSlot: (slotIndex: number) => void;
   pinnedCameraId: string | null;
   onTogglePin: (camera: CctvCamera) => void;
+  onPullClip: (camera: CctvCamera) => void;
 }) {
   return (
     <section
@@ -452,6 +560,7 @@ function CctvPageSection({
               onClear={() => onClearSlot(slotIndex)}
               isPinned={camera.id === pinnedCameraId}
               onTogglePin={() => onTogglePin(camera)}
+              onPullClip={() => onPullClip(camera)}
             />
           ) : (
             <EmptySlot key={`empty-${slotIndex}`} onDrop={(e) => onDropSlot(slotIndex, e)} />
@@ -480,48 +589,53 @@ function EmptySlot({
 }
 
 /* ------------------------------------------------------------------ */
-/*  Shared feed body — the live pane / annotated pane / count panel    */
-/*  row. Used by both the small grid card and the big pinned view.     */
-/*  Clicking a pane's expand icon zooms into just that feed; clicking  */
-/*  it again (or the collapse icon) goes back to showing both normally.*/
+/*  Shared feed body — the annotated pane + count panel + pull-clip    */
+/*  control. Used by both the small grid card and the big pinned view. */
+/*  Clicking the pane's expand icon zooms into it; clicking it again   */
+/*  (or the collapse icon) goes back to the normal layout.             */
 /* ------------------------------------------------------------------ */
 
 function CameraFeedBody({
   camera,
   focusedPane,
   onFocusPane,
+  onPullClip,
   minPaneHeight = "min-h-40",
 }: {
   camera: CctvCamera;
   focusedPane: FocusedPane;
   onFocusPane: (pane: FocusedPane) => void;
+  onPullClip: () => void;
   minPaneHeight?: string;
 }) {
-  const showLive = focusedPane === null || focusedPane === "live";
-  const showAnnotated = focusedPane === null || focusedPane === "annotated";
-
   return (
     <div className="flex flex-1 flex-col sm:flex-row">
-      {showLive && (
+      <div className="flex flex-1 flex-col border-[#E1E8D9] sm:border-r dark:border-[#232B1E]">
         <VideoPane
-          label="Live feed"
-          icon={VideoIcon}
-          src={camera.streamUrl}
-          isFocused={focusedPane === "live"}
-          onToggleFocus={() => onFocusPane(focusedPane === "live" ? null : "live")}
-          minHeight={minPaneHeight}
-        />
-      )}
-      {showAnnotated && (
-        <VideoPane
-          label="Annotated feed"
+          label="Latest analysed clip"
           icon={ScanEyeIcon}
           src={camera.annotatedStreamUrl}
           isFocused={focusedPane === "annotated"}
           onToggleFocus={() => onFocusPane(focusedPane === "annotated" ? null : "annotated")}
           minHeight={minPaneHeight}
         />
-      )}
+        <div className="flex items-center justify-between gap-2 border-t border-[#E1E8D9] px-2 py-1 dark:border-[#232B1E]">
+          <span className="truncate text-[10px] text-[#5B6B58] dark:text-[#8A9884]">
+            {camera.lastAnalysedAt
+              ? `Analysed ${new Date(camera.lastAnalysedAt).toLocaleString()}`
+              : "No analysis yet"}
+          </span>
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            disabled={camera.isPulling}
+            onClick={onPullClip}
+          >
+            {camera.isPulling ? "Pulling…" : "Pull new clip"}
+          </Button>
+        </div>
+      </div>
       {focusedPane === null && <CattleCountPanel count={camera.cattleCount} />}
     </div>
   );
@@ -537,12 +651,14 @@ function CctvSlot({
   onClear,
   isPinned,
   onTogglePin,
+  onPullClip,
 }: {
   camera: CctvCamera;
   onDrop: (event: DragEvent<HTMLDivElement>) => void;
   onClear: () => void;
   isPinned: boolean;
   onTogglePin: () => void;
+  onPullClip: () => void;
 }) {
   const [focusedPane, setFocusedPane] = useState<FocusedPane>(null);
 
@@ -580,7 +696,12 @@ function CctvSlot({
         </div>
       </div>
 
-      <CameraFeedBody camera={camera} focusedPane={focusedPane} onFocusPane={setFocusedPane} />
+      <CameraFeedBody
+        camera={camera}
+        focusedPane={focusedPane}
+        onFocusPane={setFocusedPane}
+        onPullClip={onPullClip}
+      />
     </div>
   );
 }
@@ -593,9 +714,11 @@ function CctvSlot({
 function PinnedCameraView({
   camera,
   onBack,
+  onPullClip,
 }: {
   camera: CctvCamera;
   onBack: () => void;
+  onPullClip: () => void;
 }) {
   const [focusedPane, setFocusedPane] = useState<FocusedPane>(null);
 
@@ -625,6 +748,7 @@ function PinnedCameraView({
           camera={camera}
           focusedPane={focusedPane}
           onFocusPane={setFocusedPane}
+          onPullClip={onPullClip}
           minPaneHeight="min-h-[55vh]"
         />
       </div>
@@ -648,14 +772,14 @@ function VideoPane({
   minHeight?: string;
 }) {
   return (
-    <div className="relative flex flex-1 flex-col border-[#E1E8D9] sm:border-r dark:border-[#232B1E]">
+    <div className="relative flex flex-1 flex-col">
       <span className="absolute top-1.5 left-1.5 z-10 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium tracking-wide text-white uppercase">
         {label}
       </span>
       <button
         type="button"
         onClick={onToggleFocus}
-        aria-label={isFocused ? "Show both feeds" : `Zoom into ${label.toLowerCase()}`}
+        aria-label={isFocused ? "Show the count panel too" : `Zoom into ${label.toLowerCase()}`}
         className="absolute top-1.5 right-1.5 z-10 rounded bg-black/60 p-1 text-white transition-colors hover:bg-black/80"
       >
         {isFocused ? (
@@ -665,7 +789,10 @@ function VideoPane({
         )}
       </button>
       {src ? (
+        // Key on the URL so a fresh pull (a new presigned URL) actually
+        // reloads the element rather than sitting on the old stream.
         <video
+          key={src}
           src={src}
           autoPlay
           muted
@@ -678,7 +805,7 @@ function VideoPane({
           className={`flex h-full ${minHeight} flex-1 flex-col items-center justify-center gap-1.5 bg-[#0D120A] text-[#3A4A34]`}
         >
           <Icon className="h-8 w-8" />
-          <span className="text-[11px] text-[#5B6B58]">Waiting for feed…</span>
+          <span className="text-[11px] text-[#5B6B58]">No clip yet — pull one below</span>
         </div>
       )}
     </div>
