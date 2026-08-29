@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { signIn } from "@/lib/session";
 import Header from "./Header";
+import bgImage from "@/assets/bg_image1.jpg";
 
 type LoginScreenProps = {
   /** Why the last session ended, when it ended on its own rather than by choice. */
@@ -24,78 +25,95 @@ export default function LoginScreen({ notice }: LoginScreenProps) {
   const submit = useMutation({ mutationFn: signIn });
 
   return (
-    <div className="flex min-h-svh flex-col bg-background">
-      <Header />
+    <div className="relative flex min-h-svh flex-col overflow-hidden bg-background">
+      {/* Full-bleed backdrop, dimmed so the glass card and its text stay readable. */}
+      <div
+        className="absolute inset-0 bg-cover bg-center"
+        style={{ backgroundImage: `url(${bgImage})` }}
+        aria-hidden="true"
+      />
+      <div
+        className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/40 to-black/60"
+        aria-hidden="true"
+      />
 
-      <main className="mx-auto flex w-full max-w-md flex-1 items-center px-4 py-10">
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!submit.isPending) submit.mutate({ email, password });
-          }}
-          className="flex w-full flex-col gap-4 rounded-xl border bg-card p-6"
-        >
-          <div className="flex flex-col gap-1">
-            <h2 className="font-heading text-lg font-semibold">Sign in</h2>
-            <p className="text-sm text-muted-foreground">
-              This dashboard is restricted to authorized administrators.
-            </p>
-          </div>
+      <div className="relative z-10 flex min-h-svh flex-col">
+        <Header />
 
-          {/* Hidden once a sign-in has been attempted: by then the form's own
-              error, or the absence of one, is the more current news. */}
-          {notice && !submit.isError && (
-            <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
-              {notice}
-            </p>
-          )}
+        <main className="mx-auto flex w-full max-w-md flex-1 items-center px-4 py-10">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!submit.isPending) submit.mutate({ email, password });
+            }}
+            className="flex w-full flex-col gap-4 rounded-xl border border-white/25 bg-white/10 p-6 shadow-2xl backdrop-blur-xl"
+          >
+            <div className="flex flex-col gap-1">
+              <h2 className="font-heading text-lg font-semibold text-white">
+                Sign in
+              </h2>
+              <p className="text-sm text-white/80">
+                This dashboard is restricted to authorized administrators.
+              </p>
+            </div>
 
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="login-email" className="text-sm font-medium">
-              Email
-            </label>
-            <Input
-              id="login-email"
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              autoComplete="email"
-              autoFocus
-              required
-              disabled={submit.isPending}
-            />
-          </div>
+            {/* Hidden once a sign-in has been attempted: by then the form's own
+                error, or the absence of one, is the more current news. */}
+            {notice && !submit.isError && (
+              <p className="rounded-md bg-white/15 px-3 py-2 text-sm text-white/90">
+                {notice}
+              </p>
+            )}
 
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="login-password" className="text-sm font-medium">
-              Password
-            </label>
-            <Input
-              id="login-password"
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              autoComplete="current-password"
-              required
-              disabled={submit.isPending}
-            />
-          </div>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="login-email" className="text-sm font-medium text-white">
+                Email
+              </label>
+              <Input
+                id="login-email"
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                autoComplete="email"
+                autoFocus
+                required
+                disabled={submit.isPending}
+                className="border-white/30 bg-white/90"
+              />
+            </div>
 
-          {submit.isError && (
-            <p
-              role="alert"
-              className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
-            >
-              {submit.error.message}
-            </p>
-          )}
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="login-password" className="text-sm font-medium text-white">
+                Password
+              </label>
+              <Input
+                id="login-password"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                autoComplete="current-password"
+                required
+                disabled={submit.isPending}
+                className="border-white/30 bg-white/90"
+              />
+            </div>
 
-          <Button type="submit" disabled={submit.isPending} className="w-full">
-            <LogInIcon data-icon="inline-start" />
-            {submit.isPending ? "Signing in…" : "Sign in"}
-          </Button>
-        </form>
-      </main>
+            {submit.isError && (
+              <p
+                role="alert"
+                className="rounded-md bg-destructive/15 px-3 py-2 text-sm text-red-100"
+              >
+                {submit.error.message}
+              </p>
+            )}
+
+            <Button type="submit" disabled={submit.isPending} className="w-full">
+              <LogInIcon data-icon="inline-start" />
+              {submit.isPending ? "Signing in…" : "Sign in"}
+            </Button>
+          </form>
+        </main>
+      </div>
     </div>
   );
 }

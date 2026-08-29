@@ -9,6 +9,14 @@ type AppShellProps = {
   session: SignedIn;
   section: Section | null;
   onNavigate: (section: Section) => void;
+  /**
+   * Opens the CCTV monitoring board, which is a full-screen overlay with its
+   * own sidebar and dark theme rather than another `Section` swap inside this
+   * shell — see `App.tsx`. The sidebar item that triggers it is therefore
+   * never "active" the way the other two are: there is no section state for
+   * it to match against.
+   */
+  onOpenCctvBoard: () => void;
   children: React.ReactNode;
 };
 
@@ -16,6 +24,7 @@ export default function AppShell({
   session,
   section,
   onNavigate,
+  onOpenCctvBoard,
   children,
 }: AppShellProps) {
   const queryClient = useQueryClient();
@@ -46,8 +55,11 @@ export default function AppShell({
     nav.push({
       key: "cctv",
       label: "CCTV monitoring",
-      active: section === "cctv",
-      onSelect: () => onNavigate("cctv"),
+      // Not tied to `section`: opening the board doesn't change which
+      // section this shell is showing underneath it, so there is nothing
+      // here for "active" to compare against.
+      active: false,
+      onSelect: onOpenCctvBoard,
     });
   }
 

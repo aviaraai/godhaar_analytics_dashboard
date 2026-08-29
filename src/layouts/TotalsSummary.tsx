@@ -2,7 +2,7 @@ import { TrendingUpIcon, UsersIcon } from "lucide-react";
 import type { AnalyticsTotals } from "@/lib/api";
 import LoadingSpinner from "./LoadingSpinner";
 import godhaarCount from "@/assets/godhaar_count.png";
-import totalFarmer from "@/assets/total_farmer.png";
+import totalFarmer from "@/assets/total_farmer (2).png";
 
 type TotalsSummaryProps = {
   totals: AnalyticsTotals | undefined;
@@ -30,7 +30,9 @@ export default function TotalsSummary({
         image={totalFarmer}
       />
       <StatCard
-        icon={<UsersIcon className="h-6 w-6" />}
+        // Cattle, not people — this card counts animals, so it gets a cow
+        // emoji rather than the person icon the farmers card uses.
+        icon={<span className="text-2xl leading-none">🐄</span>}
         label="Total animals"
         value={totals?.total_animals}
         hint="Animals registered"

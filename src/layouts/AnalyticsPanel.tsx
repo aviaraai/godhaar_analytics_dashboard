@@ -71,7 +71,6 @@ export default function AnalyticsPanel() {
         onChange={setDraft}
         onSearch={handleSearch}
         onClearCache={handleClearCache}
-        onResetAll={() => setDraft(EMPTY_FILTERS)}
         busy={query.isFetching}
       />
 

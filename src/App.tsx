@@ -45,15 +45,22 @@ function SignedInApp({ session }: { session: SignedIn }) {
   // The CCTV monitoring board is a full-screen tool with its own sidebar and
   // dark theme, not another `AppShell` panel — so it replaces the shell
   // entirely while open, the same way `LoginScreen` does above, rather than
-  // becoming a panel rendered inside `AppShell`'s `children`. It's reached
-  // through the same sidebar nav item as every other section, though — there
-  // is no separate open/close flag for it.
-  if (section === "cctv" && session.isAdmin) {
-    return <CctvMonitoringBoard onBack={() => setSection("dashboard")} />;
+  // becoming a third value inside `Section`. Reached only from the sidebar's
+  // "CCTV monitoring" item now — there is deliberately no second way in from
+  // inside `Dashboard` any more, so there is exactly one door to this screen.
+  const [cctvBoardOpen, setCctvBoardOpen] = useState(false);
+
+  if (cctvBoardOpen) {
+    return <CctvMonitoringBoard onBack={() => setCctvBoardOpen(false)} />;
   }
 
   return (
-    <AppShell session={session} section={section} onNavigate={setSection}>
+    <AppShell
+      session={session}
+      section={section}
+      onNavigate={setSection}
+      onOpenCctvBoard={() => setCctvBoardOpen(true)}
+    >
       {section === "dashboard" && session.isAdmin ? (
         <Dashboard key={session.email} />
       ) : section === "debug" && session.isDeveloper ? (

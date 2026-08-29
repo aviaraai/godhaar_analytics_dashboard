@@ -12,8 +12,13 @@ import TotalsSummary from "./TotalsSummary";
 const LEGACY_KEY = "analytics-legacy";
 
 /**
- * The legacy tab. Same shape as the current-data tab — totals strip, filters,
- * results — over a pre-aggregated snapshot of the old database.
+ * The legacy tab. Same shape as the current-data tab — heading, totals strip,
+ * filters, results — over a pre-aggregated snapshot of the old database.
+ *
+ * The heading lives here rather than being passed into `TotalsSummary` (which
+ * has no `title`/`description` props — those never existed on the shared
+ * component) so this tab reads as its own self-contained section rather than
+ * a caption bolted onto a card that doesn't render it.
  */
 export default function LegacyPanel() {
   // `draft` is what the form holds, `applied` is what the last press submitted.
@@ -92,13 +97,23 @@ export default function LegacyPanel() {
 
   return (
     <>
+      <div className="flex items-start gap-2">
+        <span className="mt-1 h-6 w-1 shrink-0 rounded-full bg-green-600" />
+        <div>
+          <h1 className="font-heading text-2xl font-bold text-foreground">
+            All legacy records
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Whole legacy dataset — no filters applied.
+          </p>
+        </div>
+      </div>
+
       <TotalsSummary
         totals={wholeDataset}
         isPending={totals.isPending}
         isError={totals.isError}
         onRetry={() => void totals.refetch()}
-        title="All legacy records"
-        description="Whole legacy dataset — no filters applied."
       />
 
       <LegacyFilterOptions

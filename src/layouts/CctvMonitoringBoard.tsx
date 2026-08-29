@@ -9,8 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   ArrowLeftIcon,
-  BeefIcon,
   ChevronDownIcon,
+  ChevronLeftIcon,
   ChevronRightIcon,
   FolderIcon,
   Maximize2Icon,
@@ -21,7 +21,8 @@ import {
   VideoIcon,
   XIcon,
 } from "lucide-react";
-import { useCctvBoardData } from "./useCctvBoardData";
+import { useCctvBoardData } from "./UseCctvBoardData";
+import bgImage3 from "@/assets/bg_image2.png";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -71,6 +72,30 @@ const SLOTS_PER_PAGE = 2;
 
 /** Custom drag MIME type so we don't collide with browser drag defaults. */
 const DRAG_MIME = "application/x-godhaar-camera";
+
+/**
+ * Value equality for a camera, used only to decide whether a placed slot
+ * needs to be replaced when fresh data arrives.
+ *
+ * `useCctvBoardData` (like most data hooks) builds a brand-new array of
+ * brand-new camera objects on every call, whether or not the underlying data
+ * actually changed. Comparing those objects by reference (`fresh !== slot`)
+ * would therefore read as "changed" on every render forever, which sets a new
+ * `pages` array, which triggers a re-render, which rebuilds `groups` again —
+ * a render loop that never settles. Comparing the fields that actually
+ * matter is what breaks that loop.
+ */
+function sameCamera(a: CctvCamera, b: CctvCamera): boolean {
+  return (
+    a.id === b.id &&
+    a.name === b.name &&
+    a.streamUrl === b.streamUrl &&
+    a.annotatedStreamUrl === b.annotatedStreamUrl &&
+    a.cattleCount === b.cattleCount &&
+    a.lastAnalysedAt === b.lastAnalysedAt &&
+    a.isPulling === b.isPulling
+  );
+}
 
 /* ------------------------------------------------------------------ */
 /*  Brand mark — a simplified concentric-arc "fingerprint" motif       */
@@ -173,6 +198,13 @@ export default function CctvMonitoringBoard({
   // state. When live data refreshes underneath it (a pull completes, a new
   // count arrives), keep the placed slots in sync rather than freezing them
   // at whatever they looked like the moment they were dropped in.
+  //
+  // Compared by value (`sameCamera`), not by reference: `groups` is a new
+  // array of new objects on every render regardless of whether the data
+  // changed, so a reference check here would never agree two renders were
+  // "the same" and would set a new `pages` array forever. Returning the
+  // exact same `prev` reference when nothing changed is what lets React
+  // bail out of re-rendering instead of looping.
   useEffect(() => {
     if (!usingLiveData) return;
     const byId = new Map(groups.flatMap((g) => g.cameras).map((c) => [c.id, c]));
@@ -182,7 +214,7 @@ export default function CctvMonitoringBoard({
         page.map((slot) => {
           if (!slot) return slot;
           const fresh = byId.get(slot.id);
-          if (!fresh || fresh === slot) return slot;
+          if (!fresh || sameCamera(fresh, slot)) return slot;
           changed = true;
           return fresh;
         }),
@@ -290,7 +322,15 @@ export default function CctvMonitoringBoard({
         isError={usingLiveData && board.isError}
       />
 
-      <div className="flex-1 snap-y snap-mandatory overflow-y-auto scroll-smooth">
+            <div
+        className="flex-1 snap-y snap-mandatory overflow-y-auto scroll-smooth [--cctv-overlay:rgba(244,247,239,0.55)] dark:[--cctv-overlay:rgba(16,22,14,0.55)]"
+        style={{
+          backgroundImage: `linear-gradient(var(--cctv-overlay), var(--cctv-overlay)), url(${bgImage3})`,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          backgroundAttachment: "fixed",
+        }}
+      >
         {usingLiveData && board.isLoading ? (
           <div className="flex h-full items-center justify-center gap-2 text-sm text-[#5B6B58] dark:text-[#93A08C]">
             <FingerprintMark className="h-4 w-4 animate-pulse" />
@@ -367,6 +407,10 @@ function CameraTree({
   const [openGroups, setOpenGroups] = useState<Set<string>>(
     () => new Set(groups.map((g) => g.id)),
   );
+  // Collapsed state for the sidebar itself — shrinks to a narrow icon rail
+  // and back to the full 16rem panel. Kept local to the tree since nothing
+  // outside it needs to know the sidebar's width.
+  const [collapsed, setCollapsed] = useState(false);
 
   // Newly-arrived groups (e.g. once the live fetch resolves) default to open,
   // same as the initial render — otherwise a group fetched in after mount
@@ -406,17 +450,83 @@ function CameraTree({
     }))
     .filter((group) => query === "" || group.cameras.length > 0);
 
-  return (
-    <aside className="flex w-64 shrink-0 flex-col border-r border-[#DCE5D3] bg-white dark:border-[#232B1E] dark:bg-[#141B10]">
-      <div className="border-b border-[#DCE5D3] px-3 py-3 dark:border-[#232B1E]">
+  // Collapsed rail: back button, expand toggle, and a vertical strip of
+  // camera icons a person can still click (just not drag) to add to the
+  // board — so shrinking the sidebar doesn't take away its function.
+  if (collapsed) {
+    return (
+      <aside className="flex w-14 shrink-0 flex-col items-center border-r border-[#DCE5D3] bg-white py-3 dark:border-[#232B1E] dark:bg-[#141B10]">
         <button
           type="button"
           onClick={onBack}
-          className="mb-2 flex items-center gap-1 text-xs text-[#5B6B58] transition-colors hover:text-[#1B2A1E] dark:text-[#93A08C] dark:hover:text-white"
+          aria-label="Back to Dashboard"
+          className="mb-3 rounded-md p-1.5 text-[#5B6B58] transition-colors hover:bg-[#EEF3E7] hover:text-[#1B2A1E] dark:text-[#93A08C] dark:hover:bg-[#1F2A19] dark:hover:text-white"
         >
-          <ArrowLeftIcon className="h-3.5 w-3.5" />
-          Back to Dashboard
+          <ArrowLeftIcon className="h-4 w-4" />
         </button>
+
+        <button
+          type="button"
+          onClick={() => setCollapsed(false)}
+          aria-label="Expand sidebar"
+          className="mb-4 rounded-md p-1.5 text-[#3F7D32] transition-colors hover:bg-[#3F7D32]/10 dark:text-[#6FBF5B] dark:hover:bg-[#6FBF5B]/15"
+        >
+          <ChevronRightIcon className="h-4 w-4" />
+        </button>
+
+        <div className="flex flex-1 flex-col items-center gap-1 overflow-y-auto">
+          {groups.flatMap((group) => group.cameras).map((camera) => {
+            const placed = placedIds.has(camera.id);
+            const pinned = pinnedCameraId === camera.id;
+            return (
+              <button
+                key={camera.id}
+                type="button"
+                onClick={() => onSelect(camera)}
+                title={camera.name}
+                aria-label={camera.name}
+                className={`relative flex h-9 w-9 items-center justify-center rounded-md transition-colors ${
+                  placed
+                    ? "bg-[#3F7D32]/10 text-[#3F7D32] dark:bg-[#6FBF5B]/15 dark:text-[#6FBF5B]"
+                    : "text-[#5B6B58] hover:bg-[#EEF3E7] hover:text-[#1B2A1E] dark:text-[#93A08C] dark:hover:bg-[#1F2A19] dark:hover:text-white"
+                }`}
+              >
+                <VideoIcon className="h-4 w-4" />
+                {pinned && (
+                  <PinIcon className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 text-[#C97A3D] dark:text-[#E0954D]" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </aside>
+    );
+  }
+
+  return (
+    // `shrink-0` is load-bearing here: without it, this sidebar would
+    // compress whenever the board area to its right needs more room (e.g. a
+    // wide pinned view), instead of staying a fixed 16rem strip.
+    <aside className="flex w-64 shrink-0 flex-col border-r border-[#DCE5D3] bg-white dark:border-[#232B1E] dark:bg-[#141B10]">
+      <div className="border-b border-[#DCE5D3] px-3 py-3 dark:border-[#232B1E]">
+        <div className="mb-2 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={onBack}
+            className="flex items-center gap-1 text-xs text-[#5B6B58] transition-colors hover:text-[#1B2A1E] dark:text-[#93A08C] dark:hover:text-white"
+          >
+            <ArrowLeftIcon className="h-3.5 w-3.5" />
+            Back to Dashboard
+          </button>
+          <button
+            type="button"
+            onClick={() => setCollapsed(true)}
+            aria-label="Collapse sidebar"
+            className="rounded-md p-1 text-[#9AA593] transition-colors hover:bg-[#EEF3E7] hover:text-[#1B2A1E] dark:text-[#5B6B58] dark:hover:bg-[#1F2A19] dark:hover:text-white"
+          >
+            <ChevronLeftIcon className="h-3.5 w-3.5" />
+          </button>
+        </div>
 
         <h1 className="font-heading text-sm font-bold text-[#1B2A1E] dark:text-[#EAF0E4]">
           CCTV Monitoring
@@ -816,7 +926,9 @@ function CattleCountPanel({ count }: { count: number | undefined }) {
   return (
     <div className="flex w-full shrink-0 flex-row items-center justify-center gap-2 bg-[#EFF4E8] px-4 py-3 sm:w-36 sm:flex-col sm:gap-1 dark:bg-[#141B10]">
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#C97A3D]/15 text-[#C97A3D] dark:bg-[#E0954D]/15 dark:text-[#E0954D]">
-        <BeefIcon className="h-5 w-5" />
+        <span className="text-lg leading-none" role="img" aria-label="Cow">
+          🐮
+        </span>
       </span>
       <div className="flex flex-col sm:items-center">
         <span className="text-[10px] font-medium tracking-wide text-[#5B6B58] uppercase dark:text-[#8A9884]">

@@ -1,4 +1,4 @@
-import { LeafIcon, BarChart3Icon, BugIcon, VideoIcon } from "lucide-react";
+import { BarChart3Icon, BugIcon, VideoIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import godhaarLogo from "@/assets/godhaar-logo.png";
 import godhaarFarmBg from "@/assets/godhaar.png";
@@ -77,8 +77,10 @@ export default function Sidebar({ items }: SidebarProps) {
 
           {/* Solid dark-green panel carrying the text. */}
           <div className="-mt-px flex flex-col items-center bg-gradient-to-b from-green-800 to-green-950 px-5 pb-6 pt-1 text-center text-white">
-            <span className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-white/15">
-              <LeafIcon className="h-5 w-5 text-green-200" />
+            <span className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-lg leading-none">
+              <span role="img" aria-label="Farmer">
+                🧑🏻‍🌾
+              </span>
             </span>
             <p className="font-heading text-lg font-semibold leading-snug">
               Smart tracking.
