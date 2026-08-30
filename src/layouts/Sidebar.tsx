@@ -76,7 +76,7 @@ export default function Sidebar({ items }: SidebarProps) {
           </svg>
 
           {/* Solid dark-green panel carrying the text. */}
-          <div className="-mt-px flex flex-col items-center bg-gradient-to-b from-green-800 to-green-950 px-5 pb-6 pt-1 text-center text-white">
+          <div className="-mt-px flex flex-col items-center bg-linear-to-b from-green-800 to-green-950 px-5 pb-6 pt-1 text-center text-white">
             <span className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-lg leading-none">
               <span role="img" aria-label="Farmer">
                 🧑🏻‍🌾

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { ChevronDownIcon, LeafIcon, LogOutIcon } from "lucide-react";
+import { ChevronDownIcon, LogOutIcon } from "lucide-react";
 
 type HeaderProps = {
   /**
@@ -44,7 +44,7 @@ export default function Header({
   };
 
   return (
-    <header className="flex items-center justify-between gap-4 border-b bg-gradient-to-r from-green-50 via-green-50/50 to-white px-4 py-3 md:px-8">
+    <header className="flex items-center justify-between gap-4 border-b bg-linear-to-r from-green-50 via-green-50/50 to-white px-4 py-3 md:px-8">
       <div className="flex items-center gap-2">
         <span className="text-xl leading-none" role="img" aria-label="Farmer">
           🧑🏻‍🌾
@@ -59,7 +59,7 @@ export default function Header({
 
       <div className="flex items-center gap-4">
         <div className="hidden items-center gap-1.5 text-sm text-muted-foreground sm:flex">
-          <LeafIcon className="h-4 w-4 text-green-600" />
+          <span className="text-2xl leading-none">🐄</span>
           Unique Identification for Livestock
         </div>
 

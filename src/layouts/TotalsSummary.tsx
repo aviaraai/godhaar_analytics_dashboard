@@ -1,8 +1,9 @@
-import { TrendingUpIcon, UsersIcon } from "lucide-react";
+import { TrendingUpIcon, UsersIcon, Icon } from "lucide-react";
 import type { AnalyticsTotals } from "@/lib/api";
 import LoadingSpinner from "./LoadingSpinner";
 import godhaarCount from "@/assets/godhaar_count.png";
 import totalFarmer from "@/assets/total_farmer (2).png";
+import { cowHead } from "@lucide/lab";
 
 type TotalsSummaryProps = {
   totals: AnalyticsTotals | undefined;
@@ -30,9 +31,11 @@ export default function TotalsSummary({
         image={totalFarmer}
       />
       <StatCard
-        // Cattle, not people — this card counts animals, so it gets a cow
-        // emoji rather than the person icon the farmers card uses.
-        icon={<span className="text-2xl leading-none">🐄</span>}
+        icon={
+          <span className="text-2xl leading-none">
+            <Icon iconNode={cowHead} />
+          </span>
+        }
         label="Total animals"
         value={totals?.total_animals}
         hint="Animals registered"
@@ -68,7 +71,7 @@ function StatCard({
   image,
 }: StatCardProps) {
   return (
-    <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-green-50 to-white">
+    <div className="relative overflow-hidden rounded-2xl border bg-linear-to-br from-green-50 to-white">
       {image && (
         <img
           src={image}
@@ -76,8 +79,7 @@ function StatCard({
           aria-hidden="true"
           className="pointer-events-none absolute right-0 top-0 h-full w-auto max-w-[65%] object-contain object-right"
           style={{
-            maskImage:
-              "linear-gradient(to right, transparent 0%, black 35%)",
+            maskImage: "linear-gradient(to right, transparent 0%, black 35%)",
             WebkitMaskImage:
               "linear-gradient(to right, transparent 0%, black 35%)",
           }}
