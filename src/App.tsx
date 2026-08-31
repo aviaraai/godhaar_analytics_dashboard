@@ -1,5 +1,11 @@
 import { useState } from "react";
-import { defaultSectionFor, useSession, type Section, type SignedIn } from "@/lib/session";
+import {
+  defaultSectionFor,
+  signOut,
+  useSession,
+  type Section,
+  type SignedIn,
+} from "@/lib/session";
 import AppShell from "./layouts/AppShell";
 import CctvMonitoringBoard from "./layouts/CctvMonitoringBoard";
 import Dashboard from "./layouts/Dashboard";
@@ -8,6 +14,7 @@ import Header from "./layouts/Header";
 import LoadingSpinner from "./layouts/LoadingSpinner";
 import LoginScreen from "./layouts/LoginScreen";
 import NoAccess from "./layouts/NoAccess";
+import UpdatePasswordScreen from "./layouts/UpdatePasswordScreen";
 
 /**
  * The gate in front of the app, and nothing else — which screen a signed-in
@@ -18,6 +25,11 @@ import NoAccess from "./layouts/NoAccess";
  */
 export default function App() {
   const session = useSession();
+  // Set once a password-recovery flow finishes, so the login screen that
+  // follows it can say so — not part of `useSession` itself, since that
+  // notice belongs to this specific transition rather than to session state
+  // in general (compare `session.notice`, which covers idle/expiry sign-outs).
+  const [justResetPassword, setJustResetPassword] = useState(false);
 
   if (session.status === "loading") {
     return (
@@ -27,8 +39,33 @@ export default function App() {
     );
   }
 
+  if (session.status === "password-recovery") {
+    return (
+      <UpdatePasswordScreen
+        email={session.email}
+        onComplete={async () => {
+          // The recovery link's session has done its job; drop it and send
+          // the person back through a normal sign-in with the new password,
+          // rather than continuing on with a session that only exists because
+          // of a one-time email link.
+          await signOut();
+          setJustResetPassword(true);
+        }}
+      />
+    );
+  }
+
   if (session.status === "signed-out") {
-    return <LoginScreen notice={session.notice} />;
+    return (
+      <LoginScreen
+        notice={
+          session.notice ??
+          (justResetPassword
+            ? "Your password has been updated. Please sign in."
+            : undefined)
+        }
+      />
+    );
   }
 
   // Keyed on the account so signing in as someone else starts from that

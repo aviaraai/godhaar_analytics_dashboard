@@ -19,6 +19,16 @@ const SWEEP_INTERVAL_MS = 60 * 1000;
 export type SessionState =
   | { status: "loading" }
   | { status: "signed-out"; notice?: string }
+  /**
+   * Reached only by clicking a password-reset email link, never by signing in
+   * normally. Supabase marks this with its own `PASSWORD_RECOVERY` auth event
+   * even though a real session is attached — the two look the same on the
+   * wire, so this app has to tell them apart itself, or a reset link would
+   * just quietly sign the visitor into the dashboard with a fresh session,
+   * skip the "choose a new password" step, and lose the point of the link
+   * being here at all.
+   */
+  | { status: "password-recovery"; email: string }
   | {
       status: "signed-in";
       email: string;
@@ -104,6 +114,12 @@ function describeAuthError(error: unknown): string {
         return "This account's email address has not been confirmed.";
       case "user_banned":
         return "This account has been disabled.";
+      case "user_already_exists":
+        return "An account with this email already exists.";
+      case "weak_password":
+        return "That password is too weak. Try a longer or less predictable one.";
+      case "same_password":
+        return "That's your current password. Choose a different one.";
       default:
         // Supabase's own wording, which is written for end users and is more
         // specific than anything generic we could substitute.
@@ -111,7 +127,7 @@ function describeAuthError(error: unknown): string {
     }
   }
 
-  return "Could not sign in. Please try again.";
+  return "Could not complete that request. Please try again.";
 }
 
 export async function signIn(credentials: Credentials): Promise<void> {
@@ -125,9 +141,63 @@ export async function signIn(credentials: Credentials): Promise<void> {
   beginSession();
 }
 
+export type SignUpResult = {
+  /**
+   * True when Supabase requires the address to be confirmed before a session
+   * exists — `data.session` comes back null in that case, there is nothing
+   * signed in yet, and the form has to say so rather than sitting quietly.
+   */
+  confirmationRequired: boolean;
+};
+
+/**
+ * Creates the Supabase auth user. Nothing about `app_metadata.app_roles` is
+ * decided here — that field is only ever set by the service-role key from
+ * outside this app — so a freshly signed-up account has no role at all until
+ * an administrator grants one. `useSession`/`defaultSectionFor` already treat
+ * a roleless account as "nowhere to go", which is deliberately what a brand
+ * new sign-up sees until it's approved.
+ */
+export async function signUp(credentials: Credentials): Promise<SignUpResult> {
+  const { data, error } = await auth.signUp(credentials);
+  if (error) throw new Error(describeAuthError(error), { cause: error });
+
+  if (data.session) {
+    // Same reasoning as `signIn`: a real session started here, so the same
+    // clock has to start here too, or the absolute cap silently never applies
+    // to accounts that arrived via sign-up instead of sign-in.
+    beginSession();
+    return { confirmationRequired: false };
+  }
+  return { confirmationRequired: true };
+}
+
 export async function signOut(): Promise<void> {
   endSession();
   await auth.signOut();
+}
+
+/**
+ * Sends the "reset your password" email. Always resolves the same way on
+ * success regardless of whether the address has an account — Supabase itself
+ * does not distinguish the two cases in its response, and echoing that here
+ * avoids using this form to probe which emails are registered.
+ */
+export async function resetPassword(email: string): Promise<void> {
+  const { error } = await auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}/update-password`,
+  });
+  if (error) throw new Error(describeAuthError(error), { cause: error });
+}
+
+/**
+ * Sets a new password on the session created by a recovery link. Only valid
+ * while `useSession` reports `password-recovery` — the recovery link's
+ * session is what `updateUser` acts on here.
+ */
+export async function updatePassword(newPassword: string): Promise<void> {
+  const { error } = await auth.updateUser({ password: newPassword });
+  if (error) throw new Error(describeAuthError(error), { cause: error });
 }
 
 /** The bearer token for the next backend call, or `null` if nobody is signed in. */
@@ -147,16 +217,31 @@ export function useSession(): SessionState {
   // a login form for a moment to someone already signed in is the visible cost.
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [notice, setNotice] = useState<string | undefined>(undefined);
+  // Set only by the `PASSWORD_RECOVERY` event, never inferred from the
+  // session shape itself — a recovery session and an ordinary one are
+  // otherwise indistinguishable from here.
+  const [recovering, setRecovering] = useState(false);
 
   useEffect(() => {
-    const { data } = auth.onAuthStateChange((_event, next) => {
+    const { data } = auth.onAuthStateChange((event, next) => {
       setSession(next);
+
+      if (event === "PASSWORD_RECOVERY") {
+        setRecovering(true);
+        return;
+      }
+
       if (next) {
         // Covers INITIAL_SESSION on a cold load and TOKEN_REFRESHED an hour in;
         // both need marks present, neither may reset them.
         resumeSession();
         setNotice(undefined);
       }
+      // Any event other than PASSWORD_RECOVERY closes recovery mode — most
+      // importantly SIGNED_OUT once the update-password screen finishes, but
+      // also guards against a stale flag surviving into a later, ordinary
+      // sign-in in the same tab.
+      setRecovering(false);
     });
     // Fires INITIAL_SESSION on subscribe, so the cold-load case needs no
     // separate getSession() call — it arrives through this same path.
@@ -205,6 +290,7 @@ export function useSession(): SessionState {
 
   if (session === undefined) return { status: "loading" };
   if (session === null) return { status: "signed-out", notice };
+  if (recovering) return { status: "password-recovery", email: session.user.email ?? "" };
 
   const roles = rolesOf(session);
 
