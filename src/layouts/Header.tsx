@@ -46,9 +46,6 @@ export default function Header({
   return (
     <header className="flex items-center justify-between gap-4 border-b bg-linear-to-r from-green-50 via-green-50/50 to-white px-4 py-3 md:px-8">
       <div className="flex items-center gap-2">
-        <span className="text-xl leading-none" role="img" aria-label="Farmer">
-          🧑🏻‍🌾
-        </span>
         <span className="font-heading text-lg font-semibold text-green-900">
           Godhaar
         </span>

@@ -1,10 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
-import {
-  ChevronDownIcon,
-  ChevronRightIcon,
-  ImageOffIcon,
-} from "lucide-react";
+import { ImageOffIcon } from "lucide-react";
 import { useState } from "react";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,6 +33,15 @@ type DebugRegistrationCardProps = {
   onNavigateToAnimal: (animal: string) => void;
 };
 
+/**
+ * One refused registration, shown as a square photo tile — the badge and
+ * timestamp sit directly on the image so the tile carries just enough to
+ * scan a grid of them at a glance. Everything else (device, "attempted by",
+ * photos, rejection payload) only exists once someone opens it, inside the
+ * dialog below — that's what previously lived in an inline expand/collapse
+ * section, which took a full-width row per record regardless of whether
+ * anyone looked at it.
+ */
 export default function DebugRegistrationCard({
   row,
   onNavigateToAnimal,
@@ -35,50 +49,80 @@ export default function DebugRegistrationCard({
   const [open, setOpen] = useState(false);
 
   return (
-    <article className="flex flex-col gap-4 rounded-2xl border bg-card p-4 shadow-sm">
-      <header className="flex flex-wrap items-center gap-2">
-        <Badge
-          variant="destructive"
-          className="rounded-full px-2.5 py-0.5 font-mono"
-        >
-          {row.error_code}
-        </Badge>
-        <span className="ml-auto text-xs text-muted-foreground">
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <AlertDialogTrigger
+        render={
+          <button
+            type="button"
+            aria-label={`${row.error_code}, ${formatTimestamp(row.created_at)}`}
+          />
+        }
+        className="group relative block aspect-square w-full overflow-hidden rounded-xl border bg-muted shadow-sm focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+      >
+        <Thumbnail url={row.thumbnail_url} />
+
+        {/* Scrim + overlaid details, so the badge and timestamp read clearly
+            over any photo without needing a separate row of chrome. */}
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/0 to-black/40 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
+
+        <span className="absolute top-1.5 left-1.5">
+          <Badge
+            variant="destructive"
+            className="rounded-full px-1.5 py-0 font-mono text-[9px] leading-4"
+          >
+            {row.error_code}
+          </Badge>
+        </span>
+
+        <span className="pointer-events-none absolute right-0 bottom-0 left-0 truncate bg-gradient-to-t from-black/75 to-transparent px-1.5 pt-3 pb-1 text-[10px] text-white/90">
           {formatTimestamp(row.created_at)}
         </span>
-      </header>
+      </AlertDialogTrigger>
 
-      <div className="flex flex-wrap items-start gap-4">
-        <Thumbnail url={row.thumbnail_url} />
-        <div className="flex min-w-0 flex-1 flex-col gap-2">
-          <DebugDevice device={row.device} />
-          <p className="text-[11px] text-muted-foreground">
-            Attempted by{" "}
-            <span className="font-mono">{row.created_by_email ?? "—"}</span>
-          </p>
+      <AlertDialogContent
+        className="!w-[95vw] !max-w-2xl !gap-3 sm:!max-w-3xl"
+        render={<div />}
+      >
+        <div className="max-h-[85vh] overflow-y-auto">
+          <AlertDialogHeader className="!grid-rows-none !place-items-start gap-1.5 text-left">
+            <div className="flex w-full flex-wrap items-center gap-2">
+              <Badge
+                variant="destructive"
+                className="rounded-full px-2.5 py-0.5 font-mono"
+              >
+                {row.error_code}
+              </Badge>
+              <span className="ml-auto text-xs text-muted-foreground">
+                {formatTimestamp(row.created_at)}
+              </span>
+            </div>
+            <AlertDialogTitle className="sr-only">
+              Refused registration details
+            </AlertDialogTitle>
+            <div className="flex min-w-0 flex-col gap-1">
+              <DebugDevice device={row.device} />
+              <p className="text-[11px] text-muted-foreground">
+                Attempted by{" "}
+                <span className="font-mono">{row.created_by_email ?? "—"}</span>
+              </p>
+            </div>
+          </AlertDialogHeader>
+
+          <div className="pt-3">
+            {open && (
+              <RegistrationDetailView
+                registrationId={row.registration_id}
+                onNavigateToAnimal={onNavigateToAnimal}
+              />
+            )}
+          </div>
         </div>
-      </div>
 
-      <div className="flex flex-col gap-3 border-t pt-3">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="w-fit rounded-full text-green-800 hover:bg-green-50 hover:text-green-900"
-          aria-expanded={open}
-          onClick={() => setOpen((was) => !was)}
-        >
-          {open ? <ChevronDownIcon /> : <ChevronRightIcon />}
-          {open ? "Hide photos and payload" : "Photos and rejection payload"}
-        </Button>
-        {open && (
-          <RegistrationDetailView
-            registrationId={row.registration_id}
-            onNavigateToAnimal={onNavigateToAnimal}
-          />
-        )}
-      </div>
-    </article>
+        <AlertDialogFooter className="!rounded-b-xl">
+          <AlertDialogCancel>Close</AlertDialogCancel>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
@@ -221,7 +265,7 @@ function Thumbnail({ url }: { url: string | null }) {
 
   if (!url || broken) {
     return (
-      <div className="flex size-24 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border border-dashed text-center">
+      <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-muted text-center">
         <ImageOffIcon className="size-4 text-muted-foreground" />
         <span className="px-1 text-[10px] leading-tight text-muted-foreground">
           no photo
@@ -237,7 +281,7 @@ function Thumbnail({ url }: { url: string | null }) {
       loading="lazy"
       decoding="async"
       onError={() => setBroken(true)}
-      className="size-24 shrink-0 rounded-xl bg-muted object-cover shadow-sm"
+      className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
     />
   );
 }

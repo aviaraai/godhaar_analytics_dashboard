@@ -20,8 +20,7 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
  * viewport as the main content scrolls past it. The illustration sits above
  * a solid dark-green text panel, and the seam between the two is a single
  * curve (one SVG arc) pulled up to overlap the image directly, so there is no
- * gap between the picture and the panel. The leaf badge sits centered close
- * above the tagline, in its own soft circle. Hidden below `md` — the app
+ * gap between the picture and the panel. Hidden below `md` — the app
  * falls back to no sidebar on small screens rather than an overlay drawer,
  * since none of the current nav targets warrant that complexity yet.
  */
@@ -76,12 +75,7 @@ export default function Sidebar({ items }: SidebarProps) {
           </svg>
 
           {/* Solid dark-green panel carrying the text. */}
-          <div className="-mt-px flex flex-col items-center bg-linear-to-b from-green-800 to-green-950 px-5 pb-6 pt-1 text-center text-white">
-            <span className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-lg leading-none">
-              <span role="img" aria-label="Farmer">
-                🧑🏻‍🌾
-              </span>
-            </span>
+          <div className="-mt-px flex flex-col items-center bg-linear-to-b from-green-800 to-green-950 px-5 pb-6 pt-4 text-center text-white">
             <p className="font-heading text-lg font-semibold leading-snug">
               Smart tracking.
               <br />

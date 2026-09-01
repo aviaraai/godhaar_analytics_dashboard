@@ -143,7 +143,7 @@ export default function DebugRegistrationsPanel({
             : "No registrations match these filters."}
         </p>
       ) : (
-        <ul className="flex flex-col gap-4">
+        <ul className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8">
           {visible.map((row) => (
             <li key={row.registration_id}>
               <DebugRegistrationCard
