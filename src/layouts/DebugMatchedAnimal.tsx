@@ -13,6 +13,10 @@ import DebugImages from "./DebugImages";
  * endpoint's business — four from a search, two from a registration — so this
  * renders whatever it is given rather than expecting a shape.
  *
+ * `claimed` is false when a REVIEW ranked this animal first without claiming
+ * it. The photos are shown either way — a reviewer cannot answer "same animal?"
+ * without them — but the badge keeps the model's own hedge visible.
+ *
  * `deleted` means the id no longer resolves. The id is still shown, because the
  * record stands as evidence of what the model said, and `images` simply comes
  * back empty — which is also what an animal registered without photos looks
@@ -42,6 +46,13 @@ export default function DebugMatchedAnimal({
       />
       <div className="flex flex-wrap items-center gap-2">
         <AnimalLink id={animal.godhaar_id} onNavigate={onNavigateToAnimal} />
+        {!animal.claimed && (
+          // A REVIEW ranked this animal first and then declined to claim it.
+          // Showing its photos without saying so would put an assertion in the
+          // model's mouth that it deliberately withheld — and the reviewer is
+          // being asked precisely because the model would not commit.
+          <Badge variant="warning">not claimed</Badge>
+        )}
         {animal.deleted && (
           <Badge variant="destructive">
             <TrashIcon /> deleted

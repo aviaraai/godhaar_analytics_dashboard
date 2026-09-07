@@ -107,7 +107,12 @@ export default function DebugSearchCard({
             <p className="text-sm text-muted-foreground">
               {row.decision === "FAILED"
                 ? "The model rejected the photos and never produced a verdict."
-                : "No animal was claimed."}
+                : row.verifiable
+                  ? // A REVIEW: it ranked a candidate and declined to claim it.
+                    // The card below shows that animal's photos, and the point
+                    // of asking is that the model would not commit either way.
+                    "No animal was claimed — open the photos to judge the top candidate."
+                  : "No animal was claimed."}
             </p>
           )}
 
@@ -255,7 +260,7 @@ function SearchDetailBody({
 
         <section className="flex flex-col gap-2">
           <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            {animal ? "Matched animal" : "Top candidate"}
+            {animal?.claimed ? "Matched animal" : "Top candidate"}
           </h3>
           {animal ? (
             <DebugMatchedAnimal
@@ -363,8 +368,13 @@ function CandidateNote({
         <p className="text-xs text-muted-foreground">No candidate recorded.</p>
       )}
       <p className="text-xs text-muted-foreground">
-        Context only — the model did not claim this animal, so there is nothing
-        here to confirm or refute.
+        {candidate
+          ? // A candidate was ranked but its photos could not be loaded, so
+            // there is nothing to compare against here. The verdict buttons are
+            // still offered — the record itself is verifiable — but this panel
+            // cannot help answer it.
+            "The model ranked this animal first without claiming it. Its photos could not be loaded, so there is nothing to compare here."
+          : "Nothing was ranked, so there is nothing here to confirm or refute."}
       </p>
     </div>
   );

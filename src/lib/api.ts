@@ -738,6 +738,12 @@ const matchedAnimalSchema = z.object({
   godhaar_id: z.string(),
   images: z.array(debugImageSchema),
   deleted: z.boolean(),
+  // Whether the model asserted this animal (MATCH) or merely ranked it first
+  // without claiming it (REVIEW). Both come with photos, because a reviewer
+  // needs them either way — but they are not the same statement. Defaulted to
+  // true so an older server, which only ever sent claimed matches, keeps
+  // reading correctly.
+  claimed: z.boolean().nullish().transform((v) => v ?? true),
 });
 
 export type MatchedAnimal = z.infer<typeof matchedAnimalSchema>;
@@ -790,8 +796,15 @@ const searchCardSchema = z.object({
   score: nullableNumber,
   // FAILED only.
   error_code: nullableString,
-  // MATCH only — the one decision that names an animal.
+  // MATCH only — the one decision that CLAIMS an animal. A REVIEW's top
+  // candidate is deliberately not here; it arrives on the detail view.
   godhaar_id: nullableString,
+  // Whether this row can be given a human verdict: a MATCH, or a REVIEW that
+  // ranked a candidate. Server-computed with the same predicate that guards the
+  // update, so a button rendered from this cannot answer 409. Never re-derive
+  // it from `decision` — a REVIEW's candidate lives in `detail`, which the
+  // listing does not carry. Defaulted for older servers that omit the field.
+  verifiable: z.boolean().nullish().transform((v) => v ?? false),
   // The first captured photo. Null when the record kept no images.
   thumbnail_url: nullableString,
   device: nullableDevice,
@@ -808,9 +821,12 @@ const searchDetailSchema = searchCardSchema
   .omit({ thumbnail_url: true })
   .extend({
     images: z.array(debugImageSchema),
-    // Null on every decision but MATCH: a scored near-miss is not a claim about
-    // an animal, so the contract refuses to present it as one. The near miss on
-    // a REVIEW is in `detail.top_candidate` instead.
+    // The animal this search landed on, with its stored photos, so they can be
+    // shown beside the query's — which is the only way a human can answer
+    // "same animal?". Present on a MATCH (claimed) and on a REVIEW that ranked
+    // a candidate (NOT claimed — read `claimed` to tell them apart, and never
+    // render a REVIEW's candidate as though the model asserted it). Null on
+    // UNKNOWN and FAILED, which name no animal at all.
     matched_animal: matchedAnimalSchema
       .nullish()
       .transform((value) => value ?? null),

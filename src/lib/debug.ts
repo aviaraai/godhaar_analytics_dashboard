@@ -247,12 +247,23 @@ export const sameFilters = (a: SearchViewFilters, b: SearchViewFilters) =>
   a.to === b.to;
 
 /**
- * Only a `MATCH` asserts an identification, so only a `MATCH` can be confirmed
- * or refuted. Anything else answers 409 — a client bug, not a user error —
- * which is why this gates the controls rather than handling the failure.
+ * Whether a human verdict can be recorded on this search.
+ *
+ * A `MATCH` asserts an identification, so it can be confirmed or refuted. A
+ * `REVIEW` asserts nothing, but it still ranks a candidate — and asking whether
+ * that candidate was the same animal is the ONLY way to find out that the match
+ * threshold is set too high. Labels on matches measure false accepts; labels on
+ * reviews measure misses, and a system that collects only the first can never
+ * discover it is being too strict.
+ *
+ * The server decides, and the answer rides on the row as `verifiable`. It is
+ * not re-derived from `decision` here on purpose: a REVIEW that ranked nothing
+ * has nothing to ask about, and only the server can see that — the candidate
+ * lives in `detail`, which the listing does not carry. Anything the server
+ * refuses answers 409, which is a client bug, not a user error, so this gates
+ * the controls rather than handling the failure.
  */
-export const isVerifiable = (row: { decision: Decision }) =>
-  row.decision === "MATCH";
+export const isVerifiable = (row: { verifiable: boolean }) => row.verifiable;
 
 /* -------------------------------------------------------------------------- */
 /* Registration filters                                                        */
