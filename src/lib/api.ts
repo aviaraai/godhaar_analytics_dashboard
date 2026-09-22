@@ -406,14 +406,38 @@ export const ANALYSE_TIMEOUT_MS = 35 * 60 * 1000;
  * answers `503 CCTV_SOURCE_UNAVAILABLE` and `analyseGoshalaVideo` is the way
  * in. The two produce the same run, the same history row and the same response.
  */
+
+/**
+ * Detection profiles the inference server accepts. The right one is a property
+ * of the CAMERA, not the goshala — a crowded feeding shed and an open yard at
+ * the same site want opposite settings — but the request carries only a
+ * goshala, so the operator picks per run.
+ *
+ * Labels are what an operator sees; the value is what the API takes. Leaving
+ * it unset lets the server choose, which is what every run did before this
+ * existed.
+ */
+export const CCTV_PRESETS = [
+  { value: "", label: "Automatic (recommended)" },
+  { value: "fast_hd", label: "Sparse shed or yard — high detail (under 10 animals)" },
+  { value: "crowded_hd", label: "Crowded shed (15+ animals, many lying down)" },
+  { value: "fast", label: "Fastest — lower detail" },
+  { value: "accurate", label: "Slowest — highest detail" },
+] as const;
+
+export type CctvPreset = (typeof CCTV_PRESETS)[number]["value"];
+
 export async function analyseGoshala(
   goshalaPublicId: string,
+  preset: CctvPreset = "",
 ): Promise<CctvRequest> {
   return parse(
     cctvRequestSchema,
     await request("/cctv/analyse", {
       method: "POST",
-      body: { goshala_public_id: goshalaPublicId },
+      body: preset
+        ? { goshala_public_id: goshalaPublicId, preset }
+        : { goshala_public_id: goshalaPublicId },
       timeoutMs: ANALYSE_TIMEOUT_MS,
     }),
   );
@@ -643,12 +667,19 @@ async function postVideo(
  * fields called out on `analyseGoshala` are zero-valued here too.
  */
 export async function analyseGoshalaVideo(
-  { goshalaPublicId, file }: { goshalaPublicId: string; file: File },
+  {
+    goshalaPublicId,
+    file,
+    preset = "",
+  }: { goshalaPublicId: string; file: File; preset?: CctvPreset },
   options: UploadOptions = {},
 ): Promise<CctvRequest> {
   const form = new FormData();
   form.append("goshala_public_id", goshalaPublicId);
   form.append("video", file);
+  // Omitted when unset: the server then applies its own default, which is
+  // exactly what callers got before this parameter existed.
+  if (preset) form.append("preset", preset);
 
   return parse(
     cctvRequestSchema,

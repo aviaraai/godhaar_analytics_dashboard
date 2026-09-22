@@ -16,6 +16,10 @@ type CctvUploadProps = {
   onAnalyse: () => void;
   onUseCamera: () => void;
   busy: boolean;
+  /** "" means "let the server decide" — the default for every run. */
+  preset: string;
+  presets: readonly { readonly value: string; readonly label: string }[];
+  onPresetChange: (preset: string) => void;
 };
 
 /**
@@ -38,9 +42,13 @@ export default function CctvUpload({
   onAnalyse,
   onUseCamera,
   busy,
+  preset,
+  presets,
+  onPresetChange,
 }: CctvUploadProps) {
   const inputId = useId();
   const errorId = useId();
+  const presetId = useId();
   const input = useRef<HTMLInputElement>(null);
 
   // The file lives in the parent, but the native input keeps its own copy of
@@ -93,6 +101,27 @@ export default function CctvUpload({
             {formatBytes(MAX_VIDEO_BYTES)}.
           </p>
         )}
+      </div>
+
+      {/* Applies to both buttons below: the camera and an upload run the same
+          analysis, so the profile is chosen once for whichever is pressed. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <label htmlFor={presetId} className="text-sm text-muted-foreground">
+          Scene
+        </label>
+        <select
+          id={presetId}
+          value={preset}
+          disabled={busy}
+          onChange={(e) => onPresetChange(e.target.value)}
+          className="h-9 rounded-md border bg-background px-2 text-sm"
+        >
+          {presets.map((p) => (
+            <option key={p.value} value={p.value}>
+              {p.label}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-2">

@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import {
   analyseGoshala,
   analyseGoshalaVideo,
+  CCTV_PRESETS,
+  type CctvPreset,
   getCctvRequests,
   getGoshalas,
   UnauthorizedError,
@@ -31,8 +33,8 @@ const REQUESTS_KEY = "cctv-requests";
  * used — so nothing downstream of the mutation needs to know.
  */
 type AnalyseInput =
-  | { source: "camera"; goshalaPublicId: string }
-  | { source: "upload"; goshalaPublicId: string; file: File };
+  | { source: "camera"; goshalaPublicId: string; preset: CctvPreset }
+  | { source: "upload"; goshalaPublicId: string; file: File; preset: CctvPreset };
 
 /**
  * Pick a goshala, run the model over a clip from it, read the history back.
@@ -54,6 +56,11 @@ export default function CctvPanel() {
   const [file, setFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [progress, setProgress] = useState<UploadProgress | null>(null);
+  // "" means "let the server decide", which is what every run did before this
+  // control existed. Deliberately NOT remembered between runs: the right
+  // profile depends on which camera the clip came from, so carrying the last
+  // choice over would quietly mis-tune the next, different clip.
+  const [preset, setPreset] = useState<CctvPreset>("");
   const abort = useRef<AbortController | null>(null);
 
   const goshalas = useQuery({
@@ -74,7 +81,8 @@ export default function CctvPanel() {
 
   const analyse = useMutation({
     mutationFn: (input: AnalyseInput) => {
-      if (input.source === "camera") return analyseGoshala(input.goshalaPublicId);
+      if (input.source === "camera")
+        return analyseGoshala(input.goshalaPublicId, input.preset);
       const controller = new AbortController();
       abort.current = controller;
       return analyseGoshalaVideo(input, {
@@ -166,12 +174,16 @@ export default function CctvPanel() {
           onPick={pickFile}
           error={fileError}
           busy={analyse.isPending}
+          preset={preset}
+          presets={CCTV_PRESETS}
+          onPresetChange={(p) => setPreset(p as CctvPreset)}
           onAnalyse={() => {
             if (file && !fileError) {
               analyse.mutate({
                 source: "upload",
                 goshalaPublicId: selectedGoshala.public_id,
                 file,
+                preset,
               });
             }
           }}
@@ -179,6 +191,7 @@ export default function CctvPanel() {
             analyse.mutate({
               source: "camera",
               goshalaPublicId: selectedGoshala.public_id,
+              preset,
             })
           }
         />
