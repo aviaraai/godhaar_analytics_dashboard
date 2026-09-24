@@ -1,28 +1,11 @@
 ﻿import { z } from "zod";
+import { ForbiddenError, UnauthorizedError } from "./api-errors";
 import { accessToken } from "@/lib/session";
 import type { LegacyFilters, SearchFilters } from "@/lib/types";
 
+export { ForbiddenError, UnauthorizedError };
+
 const API_ROOT = "/api/web/v1";
-
-/**
- * No token, or the backend rejected it. Handled centrally in `main.tsx` by
- * signing out, which drops the app back to the login screen â€” so callers
- * rarely need to catch this themselves.
- */
-export class UnauthorizedError extends Error {
-  constructor(message = "Your session has expired. Please sign in again.") {
-    super(message);
-    this.name = "UnauthorizedError";
-  }
-}
-
-/** Authenticated, but the account is not an admin. */
-export class ForbiddenError extends Error {
-  constructor(message = "This account is not authorized to use the dashboard.") {
-    super(message);
-    this.name = "ForbiddenError";
-  }
-}
 
 /**
  * Any other refused request. Carries the machine-readable `code` as well as the

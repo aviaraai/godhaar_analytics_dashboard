@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { updatePassword } from "@/lib/session";
 import Header from "./Header";
-import bgImage from "@/assets/bg_image1.jpg";
+import bgDesktop from '@/assets/bg-desktop.webp';
+import bgMobile from '@/assets/bg-mobile.webp';
 
 type UpdatePasswordScreenProps = {
   /** The address the recovery link was sent to, shown so the person can
@@ -42,12 +43,15 @@ export default function UpdatePasswordScreen({
   return (
     <div className="relative flex min-h-svh flex-col overflow-hidden bg-background">
       <div
-        className="absolute inset-0 bg-cover bg-center"
-        style={{ backgroundImage: `url(${bgImage})` }}
+        className="absolute inset-0 bg-cover bg-center bg-(image:--bg-mobile) md:bg-(image:--bg-desktop)"
+        style={{
+          '--bg-mobile': `url(${bgMobile})`,
+          '--bg-desktop': `url(${bgDesktop})`
+        } as React.CSSProperties}
         aria-hidden="true"
       />
       <div
-        className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/40 to-black/60"
+        className="absolute inset-0 bg-linear-to-b from-black/50 via-black/40 to-black/60"
         aria-hidden="true"
       />
 

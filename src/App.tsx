@@ -1,4 +1,5 @@
-import { useState } from "react";
+import '@fontsource-variable/geist';
+import { lazy, useState, Suspense } from "react";
 import {
   defaultSectionFor,
   signOut,
@@ -7,15 +8,16 @@ import {
   type SignedIn,
 } from "@/lib/session";
 import AppShell from "./layouts/AppShell";
-import CctvMonitoringBoard from "./layouts/CctvMonitoringBoard";
-import Dashboard from "./layouts/Dashboard";
-import DebugLayout from "./layouts/DebugLayout";
 import Header from "./layouts/Header";
 import LoadingSpinner from "./layouts/LoadingSpinner";
 import LoginScreen from "./layouts/LoginScreen";
 import NoAccess from "./layouts/NoAccess";
 import UpdatePasswordScreen from "./layouts/UpdatePasswordScreen";
 
+
+const CctvMonitoringBoard = lazy(() => import("./layouts/CctvMonitoringBoard"))
+const DebugLayout = lazy(() => import("./layouts/DebugLayout"));
+const Dashboard = lazy(() => import("./layouts/Dashboard"));
 /**
  * The gate in front of the app, and nothing else — which screen a signed-in
  * account sees is decided inside `SignedInApp`, entirely with React state.
@@ -88,7 +90,7 @@ function SignedInApp({ session }: { session: SignedIn }) {
   const [cctvBoardOpen, setCctvBoardOpen] = useState(false);
 
   if (cctvBoardOpen) {
-    return <CctvMonitoringBoard onBack={() => setCctvBoardOpen(false)} />;
+    return <Suspense fallback={<LoadingSpinner label='Loading CCTV Board...' />}><CctvMonitoringBoard onBack={() => setCctvBoardOpen(false)} /></Suspense>;
   }
 
   return (
@@ -99,9 +101,9 @@ function SignedInApp({ session }: { session: SignedIn }) {
       onOpenCctvBoard={() => setCctvBoardOpen(true)}
     >
       {section === "dashboard" && session.isAdmin ? (
-        <Dashboard key={session.email} />
+        <Suspense fallback={<LoadingSpinner label='Loading Dashboard...' />}><Dashboard key={session.email} /></Suspense>
       ) : section === "debug" && session.isDeveloper ? (
-        <DebugLayout key={session.email} />
+        <Suspense fallback={<LoadingSpinner label='Loading Debug Tools...' />}><DebugLayout key={session.email} /></Suspense>
       ) : (
         <NoAccess session={session} />
       )}

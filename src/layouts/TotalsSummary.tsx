@@ -1,8 +1,8 @@
 import { TrendingUpIcon, UsersIcon, Icon } from "lucide-react";
 import type { AnalyticsTotals } from "@/lib/api";
 import LoadingSpinner from "./LoadingSpinner";
-import godhaarCount from "@/assets/godhaar_count.png";
-import totalFarmer from "@/assets/total_farmer (2).png";
+import godhaarCount from "@/assets/godhaar_count.webp";
+import totalFarmer from "@/assets/total_farmer_count.webp";
 import { cowHead } from "@lucide/lab";
 
 type TotalsSummaryProps = {

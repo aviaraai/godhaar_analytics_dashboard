@@ -2,7 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App.tsx";
-import { ForbiddenError, UnauthorizedError } from "./lib/api.ts";
+import { ForbiddenError, UnauthorizedError } from "./lib/api-errors.ts";
 import { signOut } from "./lib/session.ts";
 import "./index.css";
 

@@ -22,7 +22,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { useCctvBoardData } from "./UseCctvBoardData";
-import bgImage3 from "@/assets/bg_image2.png";
+import bgImage3 from "@/assets/bg_image2.webp";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */

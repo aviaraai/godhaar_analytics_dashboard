@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import {
   Tabs,
@@ -8,7 +8,7 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs";
 import { getTotals, type AnalyticsTotals } from "@/lib/api";
-import { Trash2Icon, UploadCloudIcon } from "lucide-react";
+import { UploadCloudIcon } from "lucide-react";
 import AnalyticsPanel from "./AnalyticsPanel";
 import CctvPanel from "./CctvPanel";
 import LegacyPanel from "./LegacyPanel";
@@ -21,7 +21,6 @@ const LEGACY = "legacy";
 const CCTV = "cctv";
 
 export default function Dashboard() {
-  const queryClient = useQueryClient();
   const [tab, setTab] = useState<string>(CURRENT);
 
   // Whole-dataset counts for the *current* data only. Fetched regardless of

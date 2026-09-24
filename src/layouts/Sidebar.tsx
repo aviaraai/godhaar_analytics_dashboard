@@ -1,7 +1,7 @@
 import { BarChart3Icon, BugIcon, VideoIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import godhaarLogo from "@/assets/godhaar-logo.png";
-import godhaarFarmBg from "@/assets/godhaar.png";
+import godhaarLogo from "@/assets/godhaar-logo.webp";
+import godhaarFarmBg from "@/assets/godhaar.webp";
 import type { NavTabItem } from "./NavTabs";
 
 type SidebarProps = {
